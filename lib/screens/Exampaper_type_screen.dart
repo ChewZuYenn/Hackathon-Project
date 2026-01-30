@@ -6,10 +6,10 @@ class ExamCountryButton extends StatelessWidget {
   final VoidCallback onTap;
 
   const ExamCountryButton({
-    Key? key,
+    super.key,
     required this.countryName,
     required this.onTap,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
