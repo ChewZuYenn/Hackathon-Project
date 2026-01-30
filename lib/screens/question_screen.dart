@@ -32,6 +32,21 @@ class _QuestionScreenState extends State<QuestionScreen> {
     super.dispose();
   }
 
+  void _toggleListening() {
+    setState(() {
+      _isListening = !_isListening;
+    });
+  }
+
+  void _sendToAI() {
+    // TODO: Implement AI help functionality
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Sending to AI: $_spokenText'),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
