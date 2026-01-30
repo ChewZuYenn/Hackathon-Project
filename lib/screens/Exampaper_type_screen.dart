@@ -1,39 +1,7 @@
 import 'package:flutter/material.dart';
+import '../widgets/exam_countryButton.dart';
 import '../widgets/exam_typeButton.dart';
-
-class ExamCountryButton extends StatelessWidget {
-  final String countryName;
-  final VoidCallback onTap;
-
-  const ExamCountryButton({
-    super.key,
-    required this.countryName,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
-        decoration: BoxDecoration(
-          color: Colors.blueAccent.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.blueAccent, width: 2),
-        ),
-        child: Text(
-          countryName,
-          style: const TextStyle(
-            fontWeight: FontWeight.bold,
-            fontSize: 18,
-            color: Colors.blueAccent,
-          ),
-        ),
-      ),
-    );
-  }
-}
+import 'subject_selection_screen.dart';
 
 class CountrySelectionScreen extends StatelessWidget {
   const CountrySelectionScreen({super.key});
@@ -133,7 +101,7 @@ class CountrySelectionScreen extends StatelessWidget {
   ) {
     return Column(
       children: [
-        ExamCountryButton(
+        CountryButton(
           countryName: country,
           onTap: () {
             // Handle country selection if needed
@@ -148,11 +116,14 @@ class CountrySelectionScreen extends StatelessWidget {
                 examName: examType.name,
                 color: examType.color,
                 onTap: () {
-                  // Navigate to exam papers screen
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Selected: $country - ${examType.name}'),
-                      duration: const Duration(seconds: 1),
+                  // Navigate to subject selection screen
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => SubjectSelectionScreen(
+                        country: country,
+                        examType: examType.name,
+                      ),
                     ),
                   );
                 },
