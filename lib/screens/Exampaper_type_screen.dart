@@ -81,7 +81,7 @@ class CountrySelectionScreen extends StatelessWidget {
                         ExamTypeData('SPM', const Color(0xFFFFCC80)),
                         ExamTypeData('STPM', const Color(0xFFFFCC80)),
                         ExamTypeData('Matrikulasi', const Color(0xFFFFCC80)),
-                        ExamTypeData('....', const Color(0xFFFFCC80)),
+                        ExamTypeData('UPSR', const Color(0xFFFFCC80)),
                       ],
                     ),
                   ],

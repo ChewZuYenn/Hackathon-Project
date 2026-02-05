@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../utils (Helper Function)/exam_data.dart';
 import 'topic_selection_screen.dart';
 
 class SubjectSelectionScreen extends StatelessWidget {
@@ -9,24 +10,35 @@ class SubjectSelectionScreen extends StatelessWidget {
     super.key,
     required this.country,
     required this.examType,
-  });
+  });  // ✅ This is correct
+
 
   @override
   Widget build(BuildContext context) {
-    final subjects = [
-      'Mathematics',
-      'Biology',
-      'Chemistry',
-      'Physics',
-      'Additional Mathematics',
-      '...',
-    ];
+    // Get the correct subject list based on exam type
+    final subjects = ExamDatabase.getSubjects(examType);
+    final isTestSections = ExamDatabase.isTestSections(examType);
+    
+
+    // Handle case where exam type is not found
+    if (subjects.isEmpty) {
+      return Scaffold(
+        appBar: AppBar(
+          title: Text('$examType - Error'),
+        ),
+        body: Center(
+          child: Text('No subjects found for $examType'),
+        ),
+      );
+    }
 
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
         title: Text(
-          '$examType - Select Subject',
+          isTestSections 
+            ? '$examType - Select Section' 
+            : '$examType - Select Subject',
           style: const TextStyle(
             fontWeight: FontWeight.bold,
             fontSize: 20,
@@ -44,7 +56,9 @@ class SubjectSelectionScreen extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Choose your subject for $examType',
+                isTestSections
+                  ? 'Choose your test section for $examType'
+                  : 'Choose your subject for $examType',
                 style: const TextStyle(
                   fontSize: 16,
                   color: Colors.black54,
@@ -64,6 +78,7 @@ class SubjectSelectionScreen extends StatelessWidget {
                     return _buildSubjectCard(
                       context,
                       subjects[index],
+                      isTestSections,
                     );
                   },
                 ),
@@ -75,7 +90,11 @@ class SubjectSelectionScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildSubjectCard(BuildContext context, String subject) {
+  Widget _buildSubjectCard(
+    BuildContext context, 
+    String subject,
+    bool isTestSection,
+  ) {
     return InkWell(
       onTap: () {
         Navigator.push(
