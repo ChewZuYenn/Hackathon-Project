@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../model (Data Model)/question.dart';
+import '../services (API call etc)/gemini_service.dart';
 
 class QuestionScreen extends StatefulWidget {
   final String country;
@@ -25,6 +27,48 @@ class _QuestionScreenState extends State<QuestionScreen> {
   String? _selectedAnswer;
   bool _isListening = false;
   String _spokenText = '';
+
+    final GeminiQuestionService _geminiService = GeminiQuestionService();
+  Question? _currentQuestion;
+  bool _isLoading = false;
+  String? _errorMessage;
+  bool _showExplanation = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadNextQuestion();
+  }
+
+  Future<void> _loadNextQuestion() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+      _showExplanation = false;
+      _selectedAnswer = null;
+      _workingSpaceController.clear();
+    });
+
+    try {
+      final question = await _geminiService.generateQuestion(
+        examType: widget.examType,
+        subject: widget.subject,
+        topic: widget.topic,
+        difficulty: widget.difficulty,
+      );
+
+      setState(() {
+        _currentQuestion = question;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _errorMessage = e.toString().replaceAll('Exception: ', '');
+        _isLoading = false;
+      });
+    }
+  }
+
 
   @override
   void dispose() {
@@ -72,52 +116,167 @@ class _QuestionScreenState extends State<QuestionScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // Question Card
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.08),
-                        blurRadius: 10,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Question 1',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black87,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      const Text(
-                        '1) All the questions will be written here......',
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: Colors.black87,
-                          height: 1.5,
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                      // Multiple Choice Options
-                      _buildOption('A', 'Option A'),
-                      const SizedBox(height: 12),
-                      _buildOption('B', 'Option B'),
-                      const SizedBox(height: 12),
-                      _buildOption('C', 'Option C'),
-                      const SizedBox(height: 12),
-                      _buildOption('D', 'Option D'),
-                    ],
+Container(
+  width: double.infinity,
+  padding: const EdgeInsets.all(20),
+  decoration: BoxDecoration(
+    color: Colors.white,
+    borderRadius: BorderRadius.circular(16),
+    boxShadow: [
+      BoxShadow(
+        color: Colors.black.withOpacity(0.08),
+        blurRadius: 10,
+        offset: const Offset(0, 2),
+      ),
+    ],
+  ),
+  child: _isLoading
+      ? const Center(
+          child: Padding(
+            padding: EdgeInsets.all(40.0),
+            child: CircularProgressIndicator(),
+          ),
+        )
+      : _errorMessage != null
+          ? Column(
+              children: [
+                const Icon(Icons.error_outline, size: 48, color: Colors.red),
+                const SizedBox(height: 16),
+                Text(
+                  _errorMessage!,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    color: Colors.red,
                   ),
                 ),
+                const SizedBox(height: 16),
+                ElevatedButton.icon(
+                  onPressed: _loadNextQuestion,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Retry'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue,
+                  ),
+                ),
+              ],
+            )
+          : _currentQuestion == null
+              ? const Center(
+                  child: Text(
+                    'Loading your first question...',
+                    style: TextStyle(fontSize: 16),
+                  ),
+                )
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Question',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black87,
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: widget.difficulty == 'Beginner'
+                                ? Colors.green.shade100
+                                : widget.difficulty == 'Intermediate'
+                                    ? Colors.orange.shade100
+                                    : Colors.red.shade100,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            widget.difficulty,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: widget.difficulty == 'Beginner'
+                                  ? Colors.green.shade700
+                                  : widget.difficulty == 'Intermediate'
+                                      ? Colors.orange.shade700
+                                      : Colors.red.shade700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      _currentQuestion!.question,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        color: Colors.black87,
+                        height: 1.5,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    // Multiple Choice Options
+                    ...List.generate(
+                      _currentQuestion!.options.length,
+                      (index) {
+                        final option = _currentQuestion!.options[index];
+                        final label = String.fromCharCode(65 + index);
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 12.0),
+                          child: _buildOption(label, option),
+                        );
+                      },
+                    ),
+                    // Show explanation after submission
+                    if (_showExplanation && _currentQuestion!.explanation.isNotEmpty) ...[
+                      const SizedBox(height: 20),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.shade50,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.blue.shade200),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(Icons.lightbulb_outline,
+                                    color: Colors.blue.shade700),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Explanation',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.blue.shade700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              _currentQuestion!.explanation,
+                              style: const TextStyle(
+                                fontSize: 14,
+                                color: Colors.black87,
+                                height: 1.4,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+),
                 const SizedBox(height: 20),
                 // Working Space
                 Container(
@@ -392,44 +551,73 @@ class _QuestionScreenState extends State<QuestionScreen> {
                   ),
                 ),
                 const SizedBox(height: 20),
-                // Submit Button
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: () {
-                      if (_selectedAnswer != null) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('Answer submitted: $_selectedAnswer'),
-                          ),
-                        );
-                      } else {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Please select an answer'),
-                          ),
-                        );
-                      }
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.green,
-                      padding: const EdgeInsets.symmetric(vertical: 18),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
+// Next Question and Submit Buttons
+Row(
+  children: [
+    // Next Question Button
+    Expanded(
+      child: ElevatedButton.icon(
+        onPressed: _isLoading ? null : _loadNextQuestion,
+        icon: const Icon(Icons.skip_next, color: Colors.white),
+        label: Text(
+          _isLoading ? 'Loading...' : 'Next Question',
+          style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+        ),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.blue,
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+      ),
+    ),
+    const SizedBox(width: 12),
+    // Submit Answer Button
+    Expanded(
+      child: ElevatedButton(
+        onPressed: (_selectedAnswer != null && !_isLoading)
+            ? () {
+                setState(() {
+                  _showExplanation = true;
+                });
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      _selectedAnswer == _currentQuestion?.answer
+                          ? '✓ Correct!'
+                          : '✗ Incorrect. Answer: ${_currentQuestion?.answer}',
                     ),
-                    child: const Text(
-                      'Submit Answer',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                    ),
+                    backgroundColor: _selectedAnswer == _currentQuestion?.answer
+                        ? Colors.green
+                        : Colors.red,
                   ),
-                ),
-                const SizedBox(height: 20),
-              ],
+                );
+              }
+            : null,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.green,
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+        child: const Text(
+          'Submit',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+        ),
+      ),
+    ),
+  ],
+),              ],
             ),
           ),
         ),
