@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../utils (Helper Function)/exam_data.dart';
 import 'difficulty_selection_screen.dart';
 
 class TopicSelectionScreen extends StatelessWidget {
@@ -15,11 +16,8 @@ class TopicSelectionScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final topics = [
-      'Linear Algebra',
-      'Differentiation',
-      '....',
-    ];
+    // Get real topics for this exam type and subject
+    final topics = ExamDatabase.getTopics(examType, subject);
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -51,18 +49,28 @@ class TopicSelectionScreen extends StatelessWidget {
               ),
               const SizedBox(height: 30),
               Expanded(
-                child: ListView.builder(
-                  itemCount: topics.length,
-                  itemBuilder: (context, index) {
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 16.0),
-                      child: _buildTopicCard(
-                        context,
-                        topics[index],
+                child: topics.isEmpty
+                    ? const Center(
+                        child: Text(
+                          'No topics available for this subject yet.',
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: Colors.black54,
+                          ),
+                        ),
+                      )
+                    : ListView.builder(
+                        itemCount: topics.length,
+                        itemBuilder: (context, index) {
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 16.0),
+                            child: _buildTopicCard(
+                              context,
+                              topics[index],
+                            ),
+                          );
+                        },
                       ),
-                    );
-                  },
-                ),
               ),
             ],
           ),

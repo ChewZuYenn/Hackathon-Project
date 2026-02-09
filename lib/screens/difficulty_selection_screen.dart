@@ -20,7 +20,7 @@ class DifficultySelectionScreen extends StatelessWidget {
     final difficulties = [
       {'level': 'Beginner', 'color': const Color(0xFFC8E6C9)},
       {'level': 'Intermediate', 'color': const Color(0xFFFFE082)},
-      {'level': 'Beginner-Friendly', 'color': const Color(0xFFB3E5FC)},
+      {'level': 'Advance', 'color': const Color(0xFFB3E5FC)},
     ];
 
     return Scaffold(
