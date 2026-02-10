@@ -5,17 +5,18 @@ import '../utils (Helper Function)/gemini_prompt_builder.dart';
 
 class GeminiQuestionService {
   // PASTE YOUR GEMINI API KEY HERE
-  static const String geminiApiKey = "PASTE_YOUR_KEY_HERE";
+  static const String geminiApiKey = "AIzaSyAcKaQnrvqC7KwtXDpD2qphrXPQVEQfjqw";
 
-  static const String _baseUrl =
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
+ static const String _baseUrl =
+  "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
+      
   Future<Question> generateQuestion({
     required String examType,
     required String subject,
     required String topic,
     required String difficulty,
   }) async {
-    if (geminiApiKey == "PASTE_YOUR_KEY") {
+    if (geminiApiKey == "PASTE_YOUR_KEY" || geminiApiKey == "YOUR_ACTUAL_API_KEY_HERE") {
       throw Exception(
           "Please add your Gemini API key in lib/services (API call etc)/gemini_service.dart");
     }
@@ -30,10 +31,9 @@ class GeminiQuestionService {
 
       final response = await http
           .post(
-        Uri.parse(_baseUrl),
+        Uri.parse("$_baseUrl?key=$geminiApiKey"),
         headers: {
           'Content-Type': 'application/json',
-          'x-goog-api-key': geminiApiKey,
         },
             body: jsonEncode({
               "contents": [
@@ -72,8 +72,10 @@ class GeminiQuestionService {
         throw Exception("Rate limit exceeded. Please wait a moment and try again.");
       } else if (response.statusCode == 400) {
         throw Exception("Invalid request. Please check your API key.");
+      } else if (response.statusCode == 404) {
+        throw Exception("Model not found. Please update the API endpoint.");
       } else {
-        throw Exception("Failed to generate question: ${response.statusCode}");
+        throw Exception("Failed to generate question: ${response.statusCode}\n${response.body}");
       }
     } catch (e) {
       if (e.toString().contains("SocketException")) {
