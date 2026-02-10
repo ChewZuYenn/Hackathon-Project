@@ -57,3 +57,5 @@ build/
 # Platform files (usually don't need to commit these)
 *.swp
 .DS_Store
+
+.env

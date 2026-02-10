@@ -2,10 +2,10 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../model (Data Model)/question.dart';
 import '../utils (Helper Function)/gemini_prompt_builder.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class GeminiQuestionService {
-  // PASTE YOUR GEMINI API KEY HERE
-  static const String geminiApiKey = "AIzaSyAcKaQnrvqC7KwtXDpD2qphrXPQVEQfjqw";
+  static final String geminiApiKey = dotenv.env['GEMINI_API_KEY'] ?? '';
 
  static const String _baseUrl =
   "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
