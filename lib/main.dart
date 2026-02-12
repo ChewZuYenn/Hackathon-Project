@@ -1,10 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:hackathonproject/services%20(API%20call%20etc)/firebase_service.dart';
+import 'services (API call etc)/firebase_service.dart';
 import 'screens/Exampaper_type_screen.dart';
+import 'services (API call etc)/progress_tracking_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Load environment variables
   await dotenv.load(fileName: ".env");
+
+  // Initialize Firebase
+  await FirebaseService().initialize();
+
+  // Sign in anonymously so Firestore writes work
+  await FirebaseService().signInAnonymously();
+
   runApp(const MyApp());
 }
 
