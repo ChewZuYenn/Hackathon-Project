@@ -81,7 +81,7 @@ class _QuestionScreenState extends State<QuestionScreen> {
   Future<void> _submitAnswer() async {
     if (_selectedAnswer == null || _currentQuestion == null) return;
 
-    final isCorrect = _selectedAnswer == _currentQuestion!.answer;
+    final isCorrect = _selectedAnswer == _currentQuestion!.correctAnswer;
 
     setState(() {
       _showExplanation = true;
@@ -111,7 +111,7 @@ class _QuestionScreenState extends State<QuestionScreen> {
           content: Text(
             isCorrect
                 ? '✓ Correct!'
-                : '✗ Incorrect. Answer: ${_currentQuestion!.answer}',
+                : '✗ Incorrect. Answer: ${_currentQuestion!.correctAnswer}',
           ),
           backgroundColor: isCorrect ? Colors.green : Colors.red,
         ),
