@@ -28,6 +28,7 @@ class _QuestionScreenState extends State<QuestionScreen> {
   final GeminiQuestionService _geminiService = GeminiQuestionService();
   final ProgressTrackingService _progressService = ProgressTrackingService();
 
+  // ✅ FIX: stores full option TEXT, not A/B/C/D label
   String? _selectedAnswer;
   bool _isListening = false;
   String _spokenText = '';
@@ -77,18 +78,18 @@ class _QuestionScreenState extends State<QuestionScreen> {
     }
   }
 
-  /// Submit the selected answer and record the attempt in Firebase
   Future<void> _submitAnswer() async {
     if (_selectedAnswer == null || _currentQuestion == null) return;
 
-    final isCorrect = _selectedAnswer == _currentQuestion!.correctAnswer;
+    // ✅ FIX: compare full option text directly
+    final isCorrect =
+        _selectedAnswer!.trim() == _currentQuestion!.correctAnswer.trim();
 
     setState(() {
       _showExplanation = true;
       _isSubmitting = true;
     });
 
-    // Record to Firebase (fire-and-forget; errors are swallowed gracefully)
     try {
       await _progressService.recordAttempt(
         examType: widget.examType,
@@ -99,7 +100,6 @@ class _QuestionScreenState extends State<QuestionScreen> {
         questionId: _currentQuestion!.id,
       );
     } catch (e) {
-      // Non-fatal — don't break the UX if Firebase is unreachable
       debugPrint('Progress tracking error: $e');
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
@@ -111,9 +111,10 @@ class _QuestionScreenState extends State<QuestionScreen> {
           content: Text(
             isCorrect
                 ? '✓ Correct!'
-                : '✗ Incorrect. Answer: ${_currentQuestion!.correctAnswer}',
+                : '✗ Incorrect. Correct answer: ${_currentQuestion!.correctAnswer}',
           ),
           backgroundColor: isCorrect ? Colors.green : Colors.red,
+          duration: const Duration(seconds: 3),
         ),
       );
     }
@@ -263,7 +264,8 @@ class _QuestionScreenState extends State<QuestionScreen> {
                         ),
                         child: Row(
                           children: [
-                            Icon(Icons.psychology, color: Colors.purple.shade700),
+                            Icon(Icons.psychology,
+                                color: Colors.purple.shade700),
                             const SizedBox(width: 8),
                             const Text(
                               'Ask AI with Voice',
@@ -288,7 +290,8 @@ class _QuestionScreenState extends State<QuestionScreen> {
                                 decoration: BoxDecoration(
                                   color: Colors.grey.shade100,
                                   borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(color: Colors.grey.shade300),
+                                  border:
+                                      Border.all(color: Colors.grey.shade300),
                                 ),
                                 child: Text(_spokenText),
                               ),
@@ -296,7 +299,8 @@ class _QuestionScreenState extends State<QuestionScreen> {
                               onTap: _toggleListening,
                               child: Container(
                                 width: double.infinity,
-                                padding: const EdgeInsets.symmetric(vertical: 24),
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 24),
                                 decoration: BoxDecoration(
                                   color: _isListening
                                       ? Colors.red.shade50
@@ -514,6 +518,7 @@ class _QuestionScreenState extends State<QuestionScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // ── Header row ──
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
@@ -551,19 +556,25 @@ class _QuestionScreenState extends State<QuestionScreen> {
           ],
         ),
         const SizedBox(height: 16),
+
+        // ── Question text ──
         Text(
           q.question,
           style: const TextStyle(
               fontSize: 16, color: Colors.black87, height: 1.5),
         ),
         const SizedBox(height: 20),
+
+        // ── Options ──
         ...List.generate(q.options.length, (i) {
-          final label = String.fromCharCode(65 + i);
+          final label = String.fromCharCode(65 + i); // A, B, C, D
           return Padding(
             padding: const EdgeInsets.only(bottom: 12.0),
             child: _buildOption(label, q.options[i]),
           );
         }),
+
+        // ── Explanation ──
         if (_showExplanation && q.explanation.isNotEmpty) ...[
           const SizedBox(height: 20),
           Container(
@@ -606,21 +617,56 @@ class _QuestionScreenState extends State<QuestionScreen> {
     );
   }
 
+  /// ✅ FIX: selection and colour-coding based on full option TEXT
   Widget _buildOption(String label, String text) {
-    final isSelected = _selectedAnswer == label;
+    final isSelected = _selectedAnswer == text;
+
+    // After submit: green = correct answer, red = wrong selection
+    final isCorrectOption = _showExplanation &&
+        text.trim() == _currentQuestion?.correctAnswer.trim();
+    final isWrongSelection =
+        _showExplanation && isSelected && !isCorrectOption;
+
+    // Pick colours
+    Color borderColor;
+    Color bgColor;
+    Color circleColor;
+
+    if (isCorrectOption) {
+      borderColor = Colors.green;
+      bgColor = Colors.green.shade50;
+      circleColor = Colors.green;
+    } else if (isWrongSelection) {
+      borderColor = Colors.red;
+      bgColor = Colors.red.shade50;
+      circleColor = Colors.red;
+    } else if (isSelected) {
+      borderColor = Colors.blue;
+      bgColor = Colors.blue.shade50;
+      circleColor = Colors.blue;
+    } else {
+      borderColor = Colors.grey.shade300;
+      bgColor = Colors.grey.shade50;
+      circleColor = Colors.grey.shade300;
+    }
+
+    // Circle label: ✓ / ✗ / letter
+    final String circleLabel = isCorrectOption
+        ? '✓'
+        : isWrongSelection
+            ? '✗'
+            : label;
+
     return InkWell(
       onTap: _showExplanation
-          ? null // Lock after submission
-          : () => setState(() => _selectedAnswer = label),
+          ? null
+          : () => setState(() => _selectedAnswer = text), // ✅ store full text
       borderRadius: BorderRadius.circular(12),
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: isSelected ? Colors.blue.shade50 : Colors.grey.shade50,
-          border: Border.all(
-            color: isSelected ? Colors.blue : Colors.grey.shade300,
-            width: 2,
-          ),
+          color: bgColor,
+          border: Border.all(color: borderColor, width: 2),
           borderRadius: BorderRadius.circular(12),
         ),
         child: Row(
@@ -629,14 +675,16 @@ class _QuestionScreenState extends State<QuestionScreen> {
               width: 32,
               height: 32,
               decoration: BoxDecoration(
-                color: isSelected ? Colors.blue : Colors.grey.shade300,
+                color: circleColor,
                 shape: BoxShape.circle,
               ),
               child: Center(
                 child: Text(
-                  label,
+                  circleLabel,
                   style: TextStyle(
-                    color: isSelected ? Colors.white : Colors.black87,
+                    color: (isSelected || isCorrectOption || isWrongSelection)
+                        ? Colors.white
+                        : Colors.black87,
                     fontWeight: FontWeight.bold,
                     fontSize: 16,
                   ),

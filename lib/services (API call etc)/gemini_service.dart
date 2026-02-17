@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../model (Data Model)/question.dart';
 import '../utils (Helper Function)/gemini_prompt_builder.dart';
@@ -7,8 +8,9 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 class GeminiQuestionService {
   static final String geminiApiKey = dotenv.env['GEMINI_API_KEY'] ?? '';
 
+static const String _model = 'gemini-2.0-flash';
   static const String _baseUrl =
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent";
+      'https://generativelanguage.googleapis.com/v1beta/models/$_model:generateContent';
 
   Future<Question> generateQuestion({
     required String examType,
@@ -16,238 +18,204 @@ class GeminiQuestionService {
     required String topic,
     required String difficulty,
   }) async {
-    if (geminiApiKey == 'PASTE_YOUR_KEY_HERE' || geminiApiKey.isEmpty) {
-      throw Exception(
-        "Please add your Gemini API key to the .env file",
-      );
+    if (geminiApiKey.isEmpty || geminiApiKey == 'PASTE_YOUR_KEY_HERE') {
+      throw Exception('Please add your Gemini API key to the .env file');
     }
 
-    try {
-      final prompt = buildGeminiPrompt(
-        examType: examType,
-        subject: subject,
-        topic: topic,
-        difficulty: difficulty,
-      );
-
-      final response = await http.post(
-        Uri.parse('$_baseUrl?key=$geminiApiKey'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'contents': [
-            {
-              'parts': [
-                {'text': prompt}
-              ]
-            }
-          ],
-          'generationConfig': {
-            'temperature': 0.7,
-            'topK': 40,
-            'topP': 0.95,
-            'maxOutputTokens': 1024,
-          }
-        }),
-      );
-
-      if (response.statusCode != 200) {
-        throw Exception(
-            'API request failed with status: ${response.statusCode}\nBody: ${response.body}');
-      }
-
-      final data = jsonDecode(response.body);
-      
-      if (data['candidates'] == null || data['candidates'].isEmpty) {
-        throw Exception('No candidates in API response');
-      }
-
-      final textContent = data['candidates'][0]['parts'][0]['text'] as String;
-      
-      // Clean and parse the JSON with robust error handling
-      final questionData = _parseQuestionJson(textContent);
-      
-      // Validate the parsed data before creating Question object
-      _validateQuestionData(questionData);
-      
-      return Question.fromJson(questionData);
-    } catch (e) {
-      print('❌ Error generating question: $e');
-      rethrow;
-    }
-  }
-
-  /// Robust JSON parser that handles malformed responses from Gemini
-  Map<String, dynamic> _parseQuestionJson(String text) {
-    try {
-      // Remove markdown code blocks if present
-      String cleaned = text.trim();
-      if (cleaned.startsWith('```json')) {
-        cleaned = cleaned.replaceFirst('```json', '').trim();
-      }
-      if (cleaned.startsWith('```')) {
-        cleaned = cleaned.replaceFirst('```', '').trim();
-      }
-      if (cleaned.endsWith('```')) {
-        cleaned = cleaned.substring(0, cleaned.length - 3).trim();
-      }
-
-      // Try direct parsing first
+    Exception? lastError;
+    for (int attempt = 1; attempt <= 3; attempt++) {
       try {
-        return jsonDecode(cleaned) as Map<String, dynamic>;
+        return await _fetchQuestion(
+          examType: examType,
+          subject: subject,
+          topic: topic,
+          difficulty: difficulty,
+        );
       } catch (e) {
-        print('⚠️ Initial JSON parse failed, attempting repair...');
-        
-        // Attempt to repair common JSON issues
-        String repaired = _repairJson(cleaned);
-        
-        try {
-          return jsonDecode(repaired) as Map<String, dynamic>;
-        } catch (e2) {
-          print('❌ JSON repair failed: $e2');
-          print('📄 Original text: $text');
-          print('🔧 Repaired text: $repaired');
-          
-          // Last resort: try to extract JSON using regex
-          return _extractJsonWithRegex(text);
-        }
-      }
-    } catch (e) {
-      throw Exception('Failed to parse question JSON: $e\nOriginal text: $text');
+    lastError = e is Exception ? e : Exception(e.toString());
+    if (e.toString().contains('Rate limit') || e.toString().contains('429')) {
+      break;
     }
+    if (attempt < 3) {
+      await Future.delayed(Duration(seconds: 5 * attempt));
+      debugPrint('[GeminiService] Attempt $attempt failed: $e — retrying…');
+  }
+}
+    }
+    throw lastError!;
   }
 
-  /// Repairs common JSON formatting issues
-  String _repairJson(String json) {
-    String repaired = json;
-    
-    // Fix unescaped quotes in strings (common with math problems)
-    // This regex finds text within quotes and escapes internal quotes
-    repaired = _escapeQuotesInStrings(repaired);
-    
-    // Fix unescaped newlines
-    repaired = repaired.replaceAll('\n', '\\n');
-    
-    // Fix unescaped backslashes (except for already escaped ones)
-    repaired = repaired.replaceAllMapped(
-      RegExp(r'\\(?!["\\/bfnrtu])'),
-      (match) => '\\\\',
+  Future<Question> _fetchQuestion({
+    required String examType,
+    required String subject,
+    required String topic,
+    required String difficulty,
+  }) async {
+    final prompt = buildGeminiPrompt(
+      examType: examType,
+      subject: subject,
+      topic: topic,
+      difficulty: difficulty,
     );
-    
-    // Remove any trailing commas before closing braces/brackets
-    repaired = repaired.replaceAll(RegExp(r',(\s*[}\]])'), r'$1');
-    
-    return repaired;
-  }
 
-  /// Escapes quotes within JSON string values
-  String _escapeQuotesInStrings(String json) {
-    StringBuffer result = StringBuffer();
-    bool inString = false;
-    bool escaped = false;
-    
-    for (int i = 0; i < json.length; i++) {
-      String char = json[i];
-      
-      if (escaped) {
-        result.write(char);
-        escaped = false;
-        continue;
-      }
-      
-      if (char == '\\') {
-        result.write(char);
-        escaped = true;
-        continue;
-      }
-      
-      if (char == '"') {
-        // Check if this is a key or value quote
-        if (!inString) {
-          // Starting a string
-          result.write(char);
-          inString = true;
-        } else {
-          // Could be ending string or internal quote
-          // Check if followed by : or , or } or ] (end of string)
-          int nextNonWhitespace = i + 1;
-          while (nextNonWhitespace < json.length && 
-                 json[nextNonWhitespace].trim().isEmpty) {
-            nextNonWhitespace++;
-          }
-          
-          if (nextNonWhitespace < json.length) {
-            String nextChar = json[nextNonWhitespace];
-            if (nextChar == ':' || nextChar == ',' || 
-                nextChar == '}' || nextChar == ']') {
-              // This is the closing quote
-              result.write(char);
-              inString = false;
-            } else {
-              // This is an internal quote - escape it
-              result.write('\\"');
-            }
-          } else {
-            // End of string at end of JSON
-            result.write(char);
-            inString = false;
-          }
-        }
-      } else {
-        result.write(char);
-      }
+    final uri = Uri.parse('$_baseUrl?key=$geminiApiKey');
+
+    final response = await http
+        .post(
+          uri,
+          headers: {'Content-Type': 'application/json; charset=utf-8'},
+          body: jsonEncode({
+            'contents': [
+              {
+                'parts': [
+                  {'text': prompt}
+                ]
+              }
+            ],
+            'generationConfig': {
+              'temperature': 0.75,
+              'topK': 40,
+              'topP': 0.95,
+              'maxOutputTokens': 2048,
+              // Forces JSON response — no more markdown fences
+              'responseMimeType': 'application/json',
+            },
+            'safetySettings': [
+              {'category': 'HARM_CATEGORY_HARASSMENT', 'threshold': 'BLOCK_NONE'},
+              {'category': 'HARM_CATEGORY_HATE_SPEECH', 'threshold': 'BLOCK_NONE'},
+              {'category': 'HARM_CATEGORY_SEXUALLY_EXPLICIT', 'threshold': 'BLOCK_NONE'},
+              {'category': 'HARM_CATEGORY_DANGEROUS_CONTENT', 'threshold': 'BLOCK_NONE'},
+            ],
+          }),
+        )
+        .timeout(const Duration(seconds: 30));
+
+    if (response.statusCode == 429) {
+      throw Exception('Rate limit reached. Please wait 30 seconds and try again.');
     }
-    
-    return result.toString();
-  }
-
-  /// Last resort: extract JSON using regex pattern matching
-  Map<String, dynamic> _extractJsonWithRegex(String text) {
-    try {
-      // Try to find JSON-like structure in the text
-      final jsonPattern = RegExp(r'\{[\s\S]*\}');
-      final match = jsonPattern.firstMatch(text);
-      
-      if (match != null) {
-        final extracted = match.group(0)!;
-        final repaired = _repairJson(extracted);
-        return jsonDecode(repaired) as Map<String, dynamic>;
-      }
-      
-      throw Exception('Could not extract JSON from text');
-    } catch (e) {
-      // If all else fails, throw with helpful error
+    if (response.statusCode == 403) {
       throw Exception(
-        'Unable to parse question from Gemini response. '
-        'The AI returned malformed JSON. Please try again.'
-      );
+          'API key invalid or Gemini API not enabled on your Google Cloud project.');
     }
+    if (response.statusCode != 200) {
+      final snippet = response.body.length > 300
+          ? response.body.substring(0, 300)
+          : response.body;
+      throw Exception('Gemini API error ${response.statusCode}: $snippet');
+    }
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+
+    final promptFeedback = data['promptFeedback'] as Map<String, dynamic>?;
+    if (promptFeedback?['blockReason'] != null) {
+      throw Exception('Request blocked: ${promptFeedback!['blockReason']}');
+    }
+
+    final candidates = data['candidates'] as List?;
+    if (candidates == null || candidates.isEmpty) {
+      throw Exception('No response from Gemini API. Please try again.');
+    }
+
+    final finishReason = candidates[0]['finishReason'] as String? ?? '';
+    if (finishReason == 'SAFETY') {
+      throw Exception('Response blocked by safety filter. Please try again.');
+    }
+
+    final content = candidates[0]['content'] as Map<String, dynamic>?;
+    final parts = content?['parts'] as List?;
+    final rawText = (parts != null && parts.isNotEmpty)
+        ? (parts[0]['text'] as String? ?? '')
+        : '';
+
+    if (rawText.trim().isEmpty) {
+      throw Exception('Empty response from Gemini. Please try again.');
+    }
+
+    debugPrint('[GeminiService] Raw (first 300): ${rawText.substring(0, rawText.length.clamp(0, 300))}');
+
+    final questionData = _parseQuestionJson(rawText);
+    _validateQuestionData(questionData);
+    return Question.fromJson(questionData);
   }
 
-  /// Validates that the parsed JSON contains all required fields
-  void _validateQuestionData(Map<String, dynamic> data) {
-    final requiredFields = ['id', 'question', 'options', 'correctAnswer', 'explanation'];
-    
-    for (final field in requiredFields) {
-      if (!data.containsKey(field) || data[field] == null) {
-        throw Exception('Missing required field: $field in question data: $data');
+  Map<String, dynamic> _parseQuestionJson(String text) {
+    String cleaned = text.trim();
+
+    for (final fence in ['```json', '```JSON', '```dart', '```']) {
+      if (cleaned.startsWith(fence)) {
+        cleaned = cleaned.substring(fence.length).trim();
+        break;
       }
     }
-    
-    // Validate options is a list
-    if (data['options'] is! List) {
-      throw Exception('options must be a list, got: ${data['options'].runtimeType}');
+    if (cleaned.endsWith('```')) {
+      cleaned = cleaned.substring(0, cleaned.length - 3).trim();
     }
-    
+
+    try {
+      return jsonDecode(cleaned) as Map<String, dynamic>;
+    } catch (_) {}
+
+    try {
+      final match = RegExp(r'\{[\s\S]*\}').firstMatch(cleaned);
+      if (match != null) {
+        return jsonDecode(match.group(0)!) as Map<String, dynamic>;
+      }
+    } catch (_) {}
+
+    return _extractFieldsManually(cleaned);
+  }
+
+  Map<String, dynamic> _extractFieldsManually(String text) {
+    String extractString(String key) {
+      final pattern = RegExp('"$key"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"');
+      return pattern.firstMatch(text)?.group(1)?.replaceAll('\\"', '"') ?? '';
+    }
+
+    List<String> extractArray(String key) {
+      final pattern = RegExp('"$key"\\s*:\\s*\\[(.*?)\\]', dotAll: true);
+      final match = pattern.firstMatch(text);
+      if (match == null) return [];
+      return RegExp('"((?:[^"\\\\]|\\\\.)*)"')
+          .allMatches(match.group(1)!)
+          .map((m) => m.group(1)!.replaceAll('\\"', '"'))
+          .toList();
+    }
+
+    final question = extractString('question');
+    final options = extractArray('options');
+    final correctAnswer = extractString('correctAnswer');
+    final explanation = extractString('explanation');
+
+    if (question.isEmpty || options.length != 4) {
+      throw Exception(
+          'Manual extraction failed — options found: ${options.length}');
+    }
+
+    return {
+      'id': DateTime.now().millisecondsSinceEpoch.toString(),
+      'question': question,
+      'options': options,
+      'correctAnswer': correctAnswer,
+      'explanation': explanation,
+    };
+  }
+
+  void _validateQuestionData(Map<String, dynamic> data) {
+    for (final field in ['id', 'question', 'options', 'correctAnswer', 'explanation']) {
+      if (!data.containsKey(field) || data[field] == null) {
+        throw Exception('Missing required field: $field');
+      }
+    }
     final options = data['options'] as List;
-    if (options.isEmpty) {
-      throw Exception('options list cannot be empty');
+    if (options.length != 4) {
+      throw Exception('Expected 4 options, got ${options.length}');
     }
-    
-    // Validate correctAnswer exists
-    if (data['correctAnswer'].toString().isEmpty) {
-      throw Exception('correctAnswer cannot be empty');
+    final correctAnswer = data['correctAnswer'].toString().trim();
+    final optionStrings = options.map((o) => o.toString().trim()).toList();
+    if (!optionStrings.contains(correctAnswer)) {
+      throw Exception(
+          'correctAnswer "$correctAnswer" not found in options: $optionStrings');
     }
-    
-    print('✅ Question data validation passed');
+    debugPrint('[GeminiService] ✅ Question validated');
   }
 }
