@@ -7,7 +7,7 @@ import 'package:path_provider/path_provider.dart';
 /// Plays MP3 audio that arrives as a base64 string from the backend.
 /// Uses the `just_audio` package.
 class TtsPlayerService {
-  final AudioPlayer _player = AudioPlayer();
+  AudioPlayer _player = AudioPlayer();
 
   bool _isPlaying = false;
   bool get isPlaying => _isPlaying;
@@ -24,34 +24,53 @@ class TtsPlayerService {
       return;
     }
 
+    File? tempFile;
     try {
-      // Stop any current playback
+      // Stop any current playback cleanly
       await _player.stop();
 
       // Decode and write to disk (just_audio needs a file URI on Android)
       final bytes = base64Decode(audioBase64);
-      final dir   = await getTemporaryDirectory();
-      final file  = File('${dir.path}/tts_reply_${DateTime.now().millisecondsSinceEpoch}.mp3');
-      await file.writeAsBytes(bytes);
+      final dir = await getTemporaryDirectory();
+      tempFile = File(
+          '${dir.path}/tts_reply_${DateTime.now().millisecondsSinceEpoch}.mp3');
+      await tempFile.writeAsBytes(bytes);
 
-      debugPrint('[TtsPlayer] Playing ${(bytes.length / 1024).toStringAsFixed(1)}KB MP3');
+      debugPrint(
+          '[TtsPlayer] Playing ${(bytes.length / 1024).toStringAsFixed(1)}KB MP3');
 
-      await _player.setFilePath(file.path);
-      _isPlaying = true;
-      await _player.play();
-
-      // Wait until playback finishes
-      await _player.playerStateStream.firstWhere(
-        (s) => s.processingState == ProcessingState.completed || !s.playing,
+      // FIX: Set up the completion listener BEFORE calling play() to avoid
+      // missing the completed event if audio is very short.
+      final completionFuture = _player.playerStateStream.firstWhere(
+        (s) =>
+            s.processingState == ProcessingState.completed ||
+            s.processingState == ProcessingState.idle,
       );
-      _isPlaying = false;
 
-      // Clean up temp file
-      try { file.deleteSync(); } catch (_) {}
+      await _player.setFilePath(tempFile.path);
+      _isPlaying = true;
+      _player.play(); // intentionally not awaited — just_audio's play() resolves when done
+
+      // Wait for completion signal from the stream
+      await completionFuture.timeout(
+        const Duration(minutes: 5),
+        onTimeout: () {
+          debugPrint('[TtsPlayer] Playback timed out — forcing stop');
+          _player.stop();
+          return _player.playerStateStream.first;
+        },
+      );
+
+      _isPlaying = false;
     } catch (e) {
       _isPlaying = false;
       debugPrint('[TtsPlayer] Playback error: $e');
       rethrow;
+    } finally {
+      // Clean up temp file regardless of success/failure
+      try {
+        tempFile?.deleteSync();
+      } catch (_) {}
     }
   }
 

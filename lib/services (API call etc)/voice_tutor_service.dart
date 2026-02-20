@@ -30,25 +30,25 @@ class ChatTurn {
 }
 
 /// Service that communicates with the Voice Tutor backend.
-/// Mirrors the error-handling and retry pattern of gemini_service.dart.
 class VoiceTutorService {
-  /// Base URL from .env – set VOICE_TUTOR_BACKEND_URL in your app's .env
-  /// e.g. http://10.0.2.2:3000  (Android emulator → localhost)
-  ///      http://192.168.x.x:3000  (real device on same WiFi)
-  static String get _baseUrl =>
-      dotenv.env['VOICE_TUTOR_BACKEND_URL'] ?? 'http://10.0.2.2:3000';
+  /// Base URL from .env
+  /// Android emulator default: http://10.0.2.2:3000
+  /// Real device: set to your computer's local IP, e.g. http://192.168.1.5:3000
+  static String get _baseUrl {
+    final url = dotenv.env['VOICE_TUTOR_BACKEND_URL'];
+    if (url == null || url.isEmpty) {
+      debugPrint(
+          '[VoiceTutorService] WARNING: VOICE_TUTOR_BACKEND_URL not set in .env — defaulting to emulator address');
+      return 'http://10.0.2.2:3000';
+    }
+    return url;
+  }
 
   static const Duration _timeout = Duration(seconds: 60);
   static const int _maxRetries = 2;
 
   // ── Public API ─────────────────────────────────────────────────────────────
 
-  /// Sends a recorded audio file to the backend.
-  /// Performs STT, AI chat, and TTS in a single round-trip.
-  ///
-  /// [audioFile]   – M4A file returned by AudioRecorderService
-  /// [history]     – last N conversation turns for context
-  /// [examContext] – optional {examType, subject, topic} to ground the tutor
   Future<VoiceTurnResult> sendVoiceTurn({
     required File audioFile,
     required List<ChatTurn> history,
@@ -66,12 +66,13 @@ class VoiceTutorService {
       } catch (e) {
         lastError = e is Exception ? e : Exception(e.toString());
 
-        // Don't retry on non-transient errors
         final msg = e.toString();
+        // Don't retry on non-transient errors
         if (msg.contains('Permission') || msg.contains('400')) break;
 
         if (attempt < _maxRetries) {
-          debugPrint('[VoiceTutorService] Attempt $attempt failed: $msg — retrying…');
+          debugPrint(
+              '[VoiceTutorService] Attempt $attempt failed: $msg — retrying in ${2 * attempt}s…');
           await Future.delayed(Duration(seconds: 2 * attempt));
         }
       }
@@ -87,23 +88,36 @@ class VoiceTutorService {
     required List<ChatTurn> history,
     required Map<String, String> examContext,
   }) async {
-    final uri = Uri.parse('$_baseUrl/voice-turn');
+    final baseUrl = _baseUrl;
+    debugPrint('[VoiceTutorService] Sending to $baseUrl/voice-turn');
+
+    final uri = Uri.parse('$baseUrl/voice-turn');
 
     final request = http.MultipartRequest('POST', uri)
-      ..fields['mimeType']    = 'audio/m4a'
-      ..fields['history']     = jsonEncode(history.map((t) => t.toJson()).toList())
+      ..fields['mimeType'] = 'audio/m4a'
+      ..fields['history'] =
+          jsonEncode(history.map((t) => t.toJson()).toList())
       ..fields['examContext'] = jsonEncode(examContext)
-      ..files.add(await http.MultipartFile.fromPath('audio', audioFile.path));
+      ..files
+          .add(await http.MultipartFile.fromPath('audio', audioFile.path));
 
-    final streamedResponse = await request.send().timeout(_timeout);
+    final http.StreamedResponse streamedResponse;
+    try {
+      streamedResponse = await request.send().timeout(_timeout);
+    } on SocketException catch (e) {
+      throw Exception(
+          'Network error connecting to $baseUrl — is the backend running? ($e)');
+    } on http.ClientException catch (e) {
+      throw Exception('HTTP client error: $e');
+    }
+
     final response = await http.Response.fromStream(streamedResponse);
-
     _assertOk(response, '/voice-turn');
 
     final data = jsonDecode(response.body) as Map<String, dynamic>;
     return VoiceTurnResult(
-      transcript:  data['transcript']  as String? ?? '',
-      replyText:   data['replyText']   as String? ?? '',
+      transcript: data['transcript'] as String? ?? '',
+      replyText: data['replyText'] as String? ?? '',
       audioBase64: data['audioBase64'] as String? ?? '',
     );
   }
