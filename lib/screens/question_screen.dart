@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../model (Data Model)/question.dart';
 import '../services (API call etc)/gemini_service.dart';
 import '../services (API call etc)/progress_tracking_service.dart';
+import '../controller/voice_tutor_controller.dart';
+import '../widgets/voice_tutor_panel.dart';
 
 class QuestionScreen extends StatefulWidget {
   final String country;
@@ -25,16 +27,16 @@ class QuestionScreen extends StatefulWidget {
 
 class _QuestionScreenState extends State<QuestionScreen> {
   final TextEditingController _workingSpaceController = TextEditingController();
-  final GeminiQuestionService _geminiService = GeminiQuestionService();
-  final ProgressTrackingService _progressService = ProgressTrackingService();
+  final GeminiQuestionService  _geminiService         = GeminiQuestionService();
+  final ProgressTrackingService _progressService      = ProgressTrackingService();
 
-  // ✅ FIX: stores full option TEXT, not A/B/C/D label
+  // Voice tutor controller (owns mic, STT, AI, TTS)
+  late final VoiceTutorController _voiceTutorController;
+
   String? _selectedAnswer;
-  bool _isListening = false;
-  String _spokenText = '';
   Question? _currentQuestion;
-  bool _isLoading = false;
-  bool _isSubmitting = false;
+  bool _isLoading     = false;
+  bool _isSubmitting  = false;
   String? _errorMessage;
   bool _showExplanation = false;
 
@@ -42,11 +44,20 @@ class _QuestionScreenState extends State<QuestionScreen> {
   void initState() {
     super.initState();
     _loadNextQuestion();
+
+    // Wire the tutor with exam context so responses stay relevant
+    _voiceTutorController = VoiceTutorController()
+      ..examContext = {
+        'examType': widget.examType,
+        'subject':  widget.subject,
+        'topic':    widget.topic,
+      };
   }
 
   @override
   void dispose() {
     _workingSpaceController.dispose();
+    _voiceTutorController.dispose();
     super.dispose();
   }
 
@@ -61,9 +72,9 @@ class _QuestionScreenState extends State<QuestionScreen> {
 
     try {
       final question = await _geminiService.generateQuestion(
-        examType: widget.examType,
-        subject: widget.subject,
-        topic: widget.topic,
+        examType:   widget.examType,
+        subject:    widget.subject,
+        topic:      widget.topic,
         difficulty: widget.difficulty,
       );
       setState(() {
@@ -81,7 +92,6 @@ class _QuestionScreenState extends State<QuestionScreen> {
   Future<void> _submitAnswer() async {
     if (_selectedAnswer == null || _currentQuestion == null) return;
 
-    // ✅ FIX: compare full option text directly
     final isCorrect =
         _selectedAnswer!.trim() == _currentQuestion!.correctAnswer.trim();
 
@@ -92,11 +102,11 @@ class _QuestionScreenState extends State<QuestionScreen> {
 
     try {
       await _progressService.recordAttempt(
-        examType: widget.examType,
-        subject: widget.subject,
-        topic: widget.topic,
+        examType:   widget.examType,
+        subject:    widget.subject,
+        topic:      widget.topic,
         difficulty: widget.difficulty,
-        isCorrect: isCorrect,
+        isCorrect:  isCorrect,
         questionId: _currentQuestion!.id,
       );
     } catch (e) {
@@ -120,14 +130,6 @@ class _QuestionScreenState extends State<QuestionScreen> {
     }
   }
 
-  void _toggleListening() => setState(() => _isListening = !_isListening);
-
-  void _sendToAI() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Sending to AI: $_spokenText')),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -149,7 +151,7 @@ class _QuestionScreenState extends State<QuestionScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // ── Question Card ──────────────────────────────
+                // ── Question Card ──────────────────────────────────────────
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(20),
@@ -174,15 +176,13 @@ class _QuestionScreenState extends State<QuestionScreen> {
                       : _errorMessage != null
                           ? _buildErrorState()
                           : _currentQuestion == null
-                              ? const Center(
-                                  child: Text('Loading your first question…'),
-                                )
+                              ? const Center(child: Text('Loading your first question…'))
                               : _buildQuestionContent(),
                 ),
 
                 const SizedBox(height: 20),
 
-                // ── Working Space ──────────────────────────────
+                // ── Working Space ──────────────────────────────────────────
                 Container(
                   width: double.infinity,
                   decoration: BoxDecoration(
@@ -205,7 +205,7 @@ class _QuestionScreenState extends State<QuestionScreen> {
                         decoration: BoxDecoration(
                           color: Colors.blue.shade50,
                           borderRadius: const BorderRadius.only(
-                            topLeft: Radius.circular(16),
+                            topLeft:  Radius.circular(16),
                             topRight: Radius.circular(16),
                           ),
                         ),
@@ -236,190 +236,12 @@ class _QuestionScreenState extends State<QuestionScreen> {
 
                 const SizedBox(height: 20),
 
-                // ── AI Voice Help ──────────────────────────────
-                Container(
-                  width: double.infinity,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.08),
-                        blurRadius: 10,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    children: [
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: Colors.purple.shade50,
-                          borderRadius: const BorderRadius.only(
-                            topLeft: Radius.circular(16),
-                            topRight: Radius.circular(16),
-                          ),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(Icons.psychology,
-                                color: Colors.purple.shade700),
-                            const SizedBox(width: 8),
-                            const Text(
-                              'Ask AI with Voice',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.black87,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.all(16.0),
-                        child: Column(
-                          children: [
-                            if (_spokenText.isNotEmpty)
-                              Container(
-                                width: double.infinity,
-                                padding: const EdgeInsets.all(16),
-                                margin: const EdgeInsets.only(bottom: 16),
-                                decoration: BoxDecoration(
-                                  color: Colors.grey.shade100,
-                                  borderRadius: BorderRadius.circular(12),
-                                  border:
-                                      Border.all(color: Colors.grey.shade300),
-                                ),
-                                child: Text(_spokenText),
-                              ),
-                            GestureDetector(
-                              onTap: _toggleListening,
-                              child: Container(
-                                width: double.infinity,
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 24),
-                                decoration: BoxDecoration(
-                                  color: _isListening
-                                      ? Colors.red.shade50
-                                      : Colors.purple.shade50,
-                                  borderRadius: BorderRadius.circular(16),
-                                  border: Border.all(
-                                    color: _isListening
-                                        ? Colors.red
-                                        : Colors.purple.shade300,
-                                    width: 2,
-                                  ),
-                                ),
-                                child: Column(
-                                  children: [
-                                    AnimatedContainer(
-                                      duration:
-                                          const Duration(milliseconds: 300),
-                                      padding: const EdgeInsets.all(20),
-                                      decoration: BoxDecoration(
-                                        color: _isListening
-                                            ? Colors.red
-                                            : Colors.purple,
-                                        shape: BoxShape.circle,
-                                        boxShadow: _isListening
-                                            ? [
-                                                BoxShadow(
-                                                  color: Colors.red
-                                                      .withOpacity(0.4),
-                                                  blurRadius: 20,
-                                                  spreadRadius: 5,
-                                                )
-                                              ]
-                                            : [],
-                                      ),
-                                      child: Icon(
-                                        _isListening
-                                            ? Icons.mic
-                                            : Icons.mic_none,
-                                        size: 40,
-                                        color: Colors.white,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 16),
-                                    Text(
-                                      _isListening
-                                          ? 'Listening… Tap to stop'
-                                          : 'Tap to speak',
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w600,
-                                        color: _isListening
-                                            ? Colors.red.shade700
-                                            : Colors.purple.shade700,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                            if (_spokenText.isNotEmpty) ...[
-                              const SizedBox(height: 16),
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: ElevatedButton(
-                                      onPressed: () =>
-                                          setState(() => _spokenText = ''),
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: Colors.grey.shade300,
-                                        padding: const EdgeInsets.symmetric(
-                                            vertical: 14),
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius:
-                                              BorderRadius.circular(12),
-                                        ),
-                                      ),
-                                      child: const Text(
-                                        'Clear',
-                                        style: TextStyle(
-                                            color: Colors.black87,
-                                            fontWeight: FontWeight.bold),
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    flex: 2,
-                                    child: ElevatedButton(
-                                      onPressed: _sendToAI,
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: Colors.purple,
-                                        padding: const EdgeInsets.symmetric(
-                                            vertical: 14),
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius:
-                                              BorderRadius.circular(12),
-                                        ),
-                                      ),
-                                      child: const Text(
-                                        'Get AI Help',
-                                        style: TextStyle(
-                                            color: Colors.white,
-                                            fontWeight: FontWeight.bold),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+                // ── Voice AI Tutor Panel ───────────────────────────────────
+                VoiceTutorPanel(controller: _voiceTutorController),
 
                 const SizedBox(height: 20),
 
-                // ── Next / Submit Buttons ──────────────────────
+                // ── Next / Submit Buttons ──────────────────────────────────
                 Row(
                   children: [
                     Expanded(
@@ -518,7 +340,6 @@ class _QuestionScreenState extends State<QuestionScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // ── Header row ──
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
@@ -530,8 +351,7 @@ class _QuestionScreenState extends State<QuestionScreen> {
                   color: Colors.black87),
             ),
             Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
                 color: widget.difficulty == 'Beginner'
                     ? Colors.green.shade100
@@ -556,25 +376,19 @@ class _QuestionScreenState extends State<QuestionScreen> {
           ],
         ),
         const SizedBox(height: 16),
-
-        // ── Question text ──
         Text(
           q.question,
           style: const TextStyle(
               fontSize: 16, color: Colors.black87, height: 1.5),
         ),
         const SizedBox(height: 20),
-
-        // ── Options ──
         ...List.generate(q.options.length, (i) {
-          final label = String.fromCharCode(65 + i); // A, B, C, D
+          final label = String.fromCharCode(65 + i);
           return Padding(
             padding: const EdgeInsets.only(bottom: 12.0),
             child: _buildOption(label, q.options[i]),
           );
         }),
-
-        // ── Explanation ──
         if (_showExplanation && q.explanation.isNotEmpty) ...[
           const SizedBox(height: 20),
           Container(
@@ -590,8 +404,7 @@ class _QuestionScreenState extends State<QuestionScreen> {
               children: [
                 Row(
                   children: [
-                    Icon(Icons.lightbulb_outline,
-                        color: Colors.blue.shade700),
+                    Icon(Icons.lightbulb_outline, color: Colors.blue.shade700),
                     const SizedBox(width: 8),
                     Text(
                       'Explanation',
@@ -617,40 +430,35 @@ class _QuestionScreenState extends State<QuestionScreen> {
     );
   }
 
-  /// ✅ FIX: selection and colour-coding based on full option TEXT
   Widget _buildOption(String label, String text) {
     final isSelected = _selectedAnswer == text;
-
-    // After submit: green = correct answer, red = wrong selection
     final isCorrectOption = _showExplanation &&
         text.trim() == _currentQuestion?.correctAnswer.trim();
     final isWrongSelection =
         _showExplanation && isSelected && !isCorrectOption;
 
-    // Pick colours
     Color borderColor;
     Color bgColor;
     Color circleColor;
 
     if (isCorrectOption) {
       borderColor = Colors.green;
-      bgColor = Colors.green.shade50;
+      bgColor     = Colors.green.shade50;
       circleColor = Colors.green;
     } else if (isWrongSelection) {
       borderColor = Colors.red;
-      bgColor = Colors.red.shade50;
+      bgColor     = Colors.red.shade50;
       circleColor = Colors.red;
     } else if (isSelected) {
       borderColor = Colors.blue;
-      bgColor = Colors.blue.shade50;
+      bgColor     = Colors.blue.shade50;
       circleColor = Colors.blue;
     } else {
       borderColor = Colors.grey.shade300;
-      bgColor = Colors.grey.shade50;
+      bgColor     = Colors.grey.shade50;
       circleColor = Colors.grey.shade300;
     }
 
-    // Circle label: ✓ / ✗ / letter
     final String circleLabel = isCorrectOption
         ? '✓'
         : isWrongSelection
@@ -660,7 +468,7 @@ class _QuestionScreenState extends State<QuestionScreen> {
     return InkWell(
       onTap: _showExplanation
           ? null
-          : () => setState(() => _selectedAnswer = text), // ✅ store full text
+          : () => setState(() => _selectedAnswer = text),
       borderRadius: BorderRadius.circular(12),
       child: Container(
         padding: const EdgeInsets.all(16),

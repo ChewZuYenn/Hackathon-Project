@@ -8,9 +8,6 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 class GeminiQuestionService {
   static final String geminiApiKey = dotenv.env['GEMINI_API_KEY'] ?? '';
 
-  static const String _model = 'gemini-2.0-flash';
-
-  
   static const String _baseUrl =
   "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
 
