@@ -1,4 +1,11 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
+import 'package:signature/signature.dart';
 
 class QuestionScreen extends StatefulWidget {
   final String country;
@@ -22,13 +29,41 @@ class QuestionScreen extends StatefulWidget {
 
 class _QuestionScreenState extends State<QuestionScreen> {
   final TextEditingController _workingSpaceController = TextEditingController();
+  final SignatureController _signatureController = SignatureController(
+    penStrokeWidth: 4,
+    penColor: Colors.black,
+    exportBackgroundColor: Colors.white,
+  );
+
+  static const String _testQuestion = 'Simplify: (x + 1)^2';
+  // SymPy syntax expected by the backend for comparison
+  static const String _expectedAnswer = '(x + 1)**2';
+
   String? _selectedAnswer;
   bool _isListening = false;
   String _spokenText = '';
+  String _canvasFeedback = '';
+  String _recognizedLatex = '';
+  bool? _isCanvasCorrect;
+  bool _isCheckingCanvas = false;
+
+  String get _backendUrl {
+    // Flutter Web runs in the browser on your machine.
+    if (kIsWeb) return 'http://localhost:8000/submit-answer/';
+
+    // Android emulator cannot reach your PC with "localhost".
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      return 'http://10.0.2.2:8000/submit-answer/';
+    }
+
+    // Windows/macOS/iOS simulator (usually) can use localhost.
+    return 'http://localhost:8000/submit-answer/';
+  }
 
   @override
   void dispose() {
     _workingSpaceController.dispose();
+    _signatureController.dispose();
     super.dispose();
   }
 
@@ -45,6 +80,77 @@ class _QuestionScreenState extends State<QuestionScreen> {
         content: Text('Sending to AI: $_spokenText'),
       ),
     );
+  }
+
+  Future<void> _submitCanvasAnswer() async {
+    final Uint8List? pngBytes = await _signatureController.toPngBytes();
+    if (pngBytes == null || pngBytes.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please write your answer in the canvas first.'),
+        ),
+      );
+      return;
+    }
+
+    try {
+      setState(() {
+        _isCheckingCanvas = true;
+        _canvasFeedback = 'Checking your answer...';
+        _recognizedLatex = '';
+        _isCanvasCorrect = null;
+      });
+
+      final uri = Uri.parse(_backendUrl);
+      final request = http.MultipartRequest('POST', uri)
+        ..fields['correct_answer'] = _expectedAnswer
+        ..files.add(
+          http.MultipartFile.fromBytes(
+            'file',
+            pngBytes,
+            filename: 'answer.png',
+            contentType: MediaType('image', 'png'),
+          ),
+        );
+
+      final streamed = await request.send();
+      final response = await http.Response.fromStream(streamed);
+
+      if (!mounted) return;
+
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> data =
+            jsonDecode(response.body) as Map<String, dynamic>;
+        setState(() {
+          _canvasFeedback =
+              (data['feedback'] ?? 'No feedback from server.') as String;
+          _recognizedLatex = (data['latex'] ?? '') as String;
+          _isCanvasCorrect = data['correct'] as bool?;
+          _isCheckingCanvas = false;
+        });
+
+        // Also show a quick popup so it’s obvious on web.
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(_canvasFeedback)),
+        );
+      } else {
+        setState(() {
+          _canvasFeedback =
+              'Error from server: ${response.statusCode} ${response.reasonPhrase ?? ''}';
+          _recognizedLatex = '';
+          _isCanvasCorrect = null;
+          _isCheckingCanvas = false;
+        });
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _canvasFeedback = 'Error sending answer: $e';
+        _recognizedLatex = '';
+        _isCanvasCorrect = null;
+        _isCheckingCanvas = false;
+      });
+    }
   }
 
   @override
@@ -90,7 +196,7 @@ class _QuestionScreenState extends State<QuestionScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
-                        'Question 1',
+                        'Question (Test)',
                         style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
@@ -98,16 +204,26 @@ class _QuestionScreenState extends State<QuestionScreen> {
                         ),
                       ),
                       const SizedBox(height: 16),
-                      const Text(
-                        '1) All the questions will be written here......',
-                        style: TextStyle(
+                      Text(
+                        _testQuestion,
+                        style: const TextStyle(
                           fontSize: 16,
                           color: Colors.black87,
                           height: 1.5,
                         ),
                       ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Write your answer in the canvas below, then press "Check Answer".',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.black54,
+                          height: 1.3,
+                        ),
+                      ),
                       const SizedBox(height: 20),
-                      // Multiple Choice Options
+                      // (Optional) Multiple choice placeholder remains below if you want it later.
+                      // Remove if not needed.
                       _buildOption('A', 'Option A'),
                       const SizedBox(height: 12),
                       _buildOption('B', 'Option B'),
@@ -115,6 +231,170 @@ class _QuestionScreenState extends State<QuestionScreen> {
                       _buildOption('C', 'Option C'),
                       const SizedBox(height: 12),
                       _buildOption('D', 'Option D'),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+                // Handwriting Answer Canvas
+                Container(
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.08),
+                        blurRadius: 10,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.green.shade50,
+                          borderRadius: const BorderRadius.only(
+                            topLeft: Radius.circular(16),
+                            topRight: Radius.circular(16),
+                          ),
+                        ),
+                        child: const Text(
+                          'Handwritten Answer (Beta)',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black87,
+                          ),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Column(
+                          children: [
+                            Container(
+                              height: 220,
+                              width: double.infinity,
+                              decoration: BoxDecoration(
+                                color: Colors.grey.shade100,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: Colors.grey.shade400,
+                                ),
+                              ),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(12),
+                                child: Signature(
+                                  controller: _signatureController,
+                                  backgroundColor: Colors.white,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: OutlinedButton(
+                                    onPressed: () {
+                                      _signatureController.clear();
+                                      setState(() {
+                                        _canvasFeedback = '';
+                                      });
+                                    },
+                                    style: OutlinedButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 12,
+                                      ),
+                                      side: BorderSide(
+                                        color: Colors.grey.shade400,
+                                      ),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                    ),
+                                    child: const Text(
+                                      'Clear Canvas',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: ElevatedButton(
+                                    onPressed:
+                                        _isCheckingCanvas ? null : _submitCanvasAnswer,
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.green,
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 12,
+                                      ),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                    ),
+                                    child: const Text(
+                                      'Check Answer',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            if (_canvasFeedback.isNotEmpty) ...[
+                              const SizedBox(height: 12),
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: _isCanvasCorrect == null
+                                      ? Colors.blue.shade50
+                                      : _isCanvasCorrect == true
+                                          ? Colors.green.shade50
+                                          : Colors.red.shade50,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: _isCanvasCorrect == null
+                                        ? Colors.blue.shade300
+                                        : _isCanvasCorrect == true
+                                            ? Colors.green.shade300
+                                            : Colors.red.shade300,
+                                  ),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      _canvasFeedback,
+                                      style: const TextStyle(
+                                        fontSize: 14,
+                                        color: Colors.black87,
+                                      ),
+                                    ),
+                                    if (_recognizedLatex.isNotEmpty) ...[
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        'Recognized: $_recognizedLatex',
+                                        style: const TextStyle(
+                                          fontSize: 13,
+                                          color: Colors.black54,
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
                     ],
                   ),
                 ),
