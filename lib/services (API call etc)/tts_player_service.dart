@@ -39,7 +39,6 @@ class TtsPlayerService {
       debugPrint(
           '[TtsPlayer] Playing ${(bytes.length / 1024).toStringAsFixed(1)}KB MP3');
 
-      // FIX: Set up the completion listener BEFORE calling play() to avoid
       // missing the completed event if audio is very short.
       final completionFuture = _player.playerStateStream.firstWhere(
         (s) =>
@@ -49,7 +48,7 @@ class TtsPlayerService {
 
       await _player.setFilePath(tempFile.path);
       _isPlaying = true;
-      _player.play(); // intentionally not awaited — just_audio's play() resolves when done
+      _player.play(); // intentionally not awaited ,just_audio's play() resolves when done
 
       // Wait for completion signal from the stream
       await completionFuture.timeout(

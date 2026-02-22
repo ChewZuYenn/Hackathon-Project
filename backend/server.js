@@ -12,8 +12,8 @@
 
 require('dotenv').config();
 const express = require('express');
-const multer  = require('multer');
-const fetch   = require('node-fetch');
+const multer = require('multer');
+const fetch = require('node-fetch');
 const FormData = require('form-data');
 
 const app = express();
@@ -59,41 +59,44 @@ async function transcribeWithWhisper(audioBuffer, mimeType) {
   return data.text?.trim() ?? '';
 }
 
-/** Gemini chat – streams the full reply text */
-async function chatWithGemini(userText, history, examContext) {
+/** Gemini chat – returns the full reply text */
+async function chatWithGemini(userText, history, examContext, questionText, workingSpace) {
   const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`;
 
-  // Build conversation turns
   const contents = [];
 
-  // System-level preamble injected as the first user turn
-  const systemPrompt = `You are a friendly, encouraging voice tutor helping a student with ${examContext?.examType ?? 'their exam'} – ${examContext?.subject ?? 'general studies'}, topic: ${examContext?.topic ?? 'any topic'}.
-Keep answers concise (2-4 sentences max) because they will be spoken aloud. Use clear, simple language. If the student seems confused, offer a different explanation. Never use markdown, bullet points, or special symbols – plain prose only.`;
+  // Build a rich system prompt with full context about what the student is working on
+  let systemPrompt = `You are a friendly, encouraging voice AI tutor helping a student with ${examContext?.examType ?? 'their exam'} – ${examContext?.subject ?? 'general studies'}, topic: ${examContext?.topic ?? 'any topic'}.`;
 
-  contents.push({ role: 'user',  parts: [{ text: systemPrompt }] });
-  contents.push({ role: 'model', parts: [{ text: "Got it! I'm ready to help." }] });
+  if (questionText && questionText.trim()) {
+    systemPrompt += `\n\nThe student is currently working on this question:\n"${questionText.trim()}"`;
+  }
 
-  // Inject history (last N turns)
+  if (workingSpace && workingSpace.trim()) {
+    systemPrompt += `\n\nThe student's working space (their notes and calculations so far) shows:\n"${workingSpace.trim()}"`;
+  }
+
+  systemPrompt += `\n\nBe helpful, concise (2-4 sentences), and encouraging. If the student has working shown, reference it in your response. Use clear, simple language. Never use markdown, bullet points, or special symbols – plain prose only, since your response will be spoken aloud.`;
+
+  contents.push({ role: 'user', parts: [{ text: systemPrompt }] });
+  contents.push({ role: 'model', parts: [{ text: "Got it! I'm ready to help this student." }] });
+
+  // Inject history
   for (const turn of history) {
-    contents.push({ role: 'user',  parts: [{ text: turn.user }] });
+    contents.push({ role: 'user', parts: [{ text: turn.user }] });
     contents.push({ role: 'model', parts: [{ text: turn.assistant }] });
   }
 
-  // Current user message
   contents.push({ role: 'user', parts: [{ text: userText }] });
 
   const body = {
     contents,
-    generationConfig: {
-      temperature: 0.7,
-      maxOutputTokens: 300,
-      topP: 0.95,
-    },
+    generationConfig: { temperature: 0.7, maxOutputTokens: 300, topP: 0.95 },
     safetySettings: [
-      { category: 'HARM_CATEGORY_HARASSMENT',        threshold: 'BLOCK_NONE' },
-      { category: 'HARM_CATEGORY_HATE_SPEECH',        threshold: 'BLOCK_NONE' },
-      { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT',  threshold: 'BLOCK_NONE' },
-      { category: 'HARM_CATEGORY_DANGEROUS_CONTENT',  threshold: 'BLOCK_NONE' },
+      { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
+      { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
+      { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
+      { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
     ],
   };
 
@@ -173,15 +176,17 @@ app.post('/stt', upload.single('audio'), async (req, res) => {
 
 /**
  * POST /chat
- * Body: { userText, history: [{user, assistant}], examContext: {examType, subject, topic} }
+ * Body: { userText, history, examContext, questionText?, workingSpace? }
  * Returns: { replyText: string }
  */
 app.post('/chat', async (req, res) => {
   try {
-    const { userText, history = [], examContext = {} } = req.body;
+    const { userText, history = [], examContext = {}, questionText = '', workingSpace = '' } = req.body;
     if (!userText) return res.status(400).json({ error: 'userText is required' });
 
-    const replyText = await chatWithGemini(userText, history, examContext);
+    console.log(`[/chat] user: "${userText.substring(0, 60)}…"  workingSpace: ${workingSpace ? `"${workingSpace.substring(0, 40)}…"` : '(none)'}`);
+
+    const replyText = await chatWithGemini(userText, history, examContext, questionText, workingSpace);
     res.json({ replyText });
   } catch (err) {
     console.error('[/chat]', err.message);
@@ -221,9 +226,9 @@ app.post('/voice-turn', upload.single('audio'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'No audio file uploaded' });
 
-    const mimeType   = req.body.mimeType   || req.file.mimetype || 'audio/m4a';
-    const history    = JSON.parse(req.body.history    || '[]');
-    const examContext= JSON.parse(req.body.examContext || '{}');
+    const mimeType = req.body.mimeType || req.file.mimetype || 'audio/m4a';
+    const history = JSON.parse(req.body.history || '[]');
+    const examContext = JSON.parse(req.body.examContext || '{}');
 
     console.log(`[/voice-turn] audio=${req.file.size}B  history=${history.length} turns`);
 
@@ -260,16 +265,30 @@ app.post('/voice-turn', upload.single('audio'), async (req, res) => {
 
 /** Gemini multimodal STT fallback (when no OpenAI key) */
 async function transcribeWithGeminiFallback(audioBuffer, mimeType) {
-  const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`;
+  const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${process.env.GEMINI_API_KEY}`;
   const base64Audio = audioBuffer.toString('base64');
+
+  // Normalize MIME type: audio/m4a is non-standard.
+  // The recorder uses AAC-LC codec in m4a container, so use audio/aac.
+  let normalizedMime = mimeType;
+  if (mimeType === 'audio/m4a' || mimeType === 'audio/x-m4a' || mimeType === 'audio/mp4') {
+    normalizedMime = 'audio/aac';
+  }
+  console.log(`[STT-Gemini] Audio size: ${audioBuffer.length}B, MIME: ${normalizedMime} (original: ${mimeType})`);
 
   const body = {
     contents: [{
       parts: [
-        { text: 'Please transcribe the speech in this audio file. Return only the transcribed text, nothing else.' },
-        { inlineData: { mimeType, data: base64Audio } },
+        {
+          text: 'Transcribe the following audio recording into text. Output ONLY the exact words spoken, with no additional commentary or formatting. If no speech is detected, output exactly: EMPTY'
+        },
+        { inlineData: { mimeType: normalizedMime, data: base64Audio } },
       ],
     }],
+    generationConfig: {
+      temperature: 0.1,
+      maxOutputTokens: 500,
+    },
   };
 
   const res = await fetch(GEMINI_URL, {
@@ -280,10 +299,20 @@ async function transcribeWithGeminiFallback(audioBuffer, mimeType) {
 
   if (!res.ok) {
     const err = await res.text();
+    console.error(`[STT-Gemini] API error (${res.status}): ${err}`);
     throw new Error(`Gemini STT fallback failed (${res.status}): ${err}`);
   }
   const data = await res.json();
-  return data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? '';
+
+  // Log the full response for debugging
+  console.log(`[STT-Gemini] Full response:`, JSON.stringify(data, null, 2));
+
+  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? '';
+  console.log(`[STT-Gemini] Extracted text: "${text}"`);
+
+  // If Gemini returned our sentinel value, treat as empty
+  if (text === 'EMPTY') return '';
+  return text;
 }
 
 // ── Start ────────────────────────────────────────────────────────────────────

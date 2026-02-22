@@ -4,6 +4,7 @@ import '../services (API call etc)/gemini_service.dart';
 import '../services (API call etc)/progress_tracking_service.dart';
 import '../controller/voice_tutor_controller.dart';
 import '../widgets/voice_tutor_panel.dart';
+import '../widgets/drawing_canvas.dart';
 
 class QuestionScreen extends StatefulWidget {
   final String country;
@@ -39,19 +40,29 @@ class _QuestionScreenState extends State<QuestionScreen> {
   bool _isSubmitting  = false;
   String? _errorMessage;
   bool _showExplanation = false;
+  bool _isHandwritingMode = false;
 
   @override
   void initState() {
     super.initState();
-    _loadNextQuestion();
 
-    // Wire the tutor with exam context so responses stay relevant
+    // Create controller first so listeners and questionText can be set
     _voiceTutorController = VoiceTutorController()
       ..examContext = {
         'examType': widget.examType,
         'subject':  widget.subject,
         'topic':    widget.topic,
       };
+
+    // Load persisted conversation history from local storage
+    _voiceTutorController.loadHistory();
+
+    // Keep working space in sync with the controller at all times
+    _workingSpaceController.addListener(() {
+      _voiceTutorController.workingSpaceText = _workingSpaceController.text;
+    });
+
+    _loadNextQuestion();
   }
 
   @override
@@ -80,6 +91,8 @@ class _QuestionScreenState extends State<QuestionScreen> {
       setState(() {
         _currentQuestion = question;
         _isLoading = false;
+        // Update controller with the new question text so AI has full context
+        _voiceTutorController.questionText = question.question;
       });
     } catch (e) {
       setState(() {
@@ -151,7 +164,7 @@ class _QuestionScreenState extends State<QuestionScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // ── Question Card ──────────────────────────────────────────
+                // Question Card 
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(20),
@@ -182,7 +195,7 @@ class _QuestionScreenState extends State<QuestionScreen> {
 
                 const SizedBox(height: 20),
 
-                // ── Working Space ──────────────────────────────────────────
+                //Working Space
                 Container(
                   width: double.infinity,
                   decoration: BoxDecoration(
@@ -201,7 +214,7 @@ class _QuestionScreenState extends State<QuestionScreen> {
                     children: [
                       Container(
                         width: double.infinity,
-                        padding: const EdgeInsets.all(16),
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                         decoration: BoxDecoration(
                           color: Colors.blue.shade50,
                           borderRadius: const BorderRadius.only(
@@ -209,26 +222,49 @@ class _QuestionScreenState extends State<QuestionScreen> {
                             topRight: Radius.circular(16),
                           ),
                         ),
-                        child: const Text(
-                          'Working Space',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.black87,
-                          ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              'Working Space',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.black87,
+                              ),
+                            ),
+                            SegmentedButton<bool>(
+                              segments: const [
+                                ButtonSegment(value: false, icon: Icon(Icons.keyboard), label: Text('Type')),
+                                ButtonSegment(value: true, icon: Icon(Icons.draw), label: Text('Draw')),
+                              ],
+                              selected: {_isHandwritingMode},
+                              onSelectionChanged: (Set<bool> newSelection) {
+                                setState(() {
+                                  _isHandwritingMode = newSelection.first;
+                                });
+                              },
+                              style: SegmentedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(horizontal: 8),
+                                visualDensity: VisualDensity.compact,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                       Padding(
                         padding: const EdgeInsets.all(16.0),
-                        child: TextField(
-                          controller: _workingSpaceController,
-                          maxLines: 8,
-                          decoration: const InputDecoration(
-                            hintText: 'Write your working here…',
-                            border: OutlineInputBorder(),
-                            contentPadding: EdgeInsets.all(12),
-                          ),
-                        ),
+                        child: _isHandwritingMode
+                            ? const DrawingCanvas(height: 180)
+                            : TextField(
+                                controller: _workingSpaceController,
+                                maxLines: 8,
+                                decoration: const InputDecoration(
+                                  hintText: 'Write your working here…',
+                                  border: OutlineInputBorder(),
+                                  contentPadding: EdgeInsets.all(12),
+                                ),
+                              ),
                       ),
                     ],
                   ),
@@ -236,12 +272,12 @@ class _QuestionScreenState extends State<QuestionScreen> {
 
                 const SizedBox(height: 20),
 
-                // ── Voice AI Tutor Panel ───────────────────────────────────
+                //Voice AI Tutor Panel
                 VoiceTutorPanel(controller: _voiceTutorController),
 
                 const SizedBox(height: 20),
 
-                // ── Next / Submit Buttons ──────────────────────────────────
+                //Next / Submit Buttons
                 Row(
                   children: [
                     Expanded(
@@ -312,7 +348,7 @@ class _QuestionScreenState extends State<QuestionScreen> {
     );
   }
 
-  // ── Helpers ──────────────────────────────────────────────────────────────
+  //Helpers
 
   Widget _buildErrorState() {
     return Column(

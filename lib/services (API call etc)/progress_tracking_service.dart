@@ -11,9 +11,6 @@ class ProgressTrackingService {
   FirebaseFirestore get _firestore => _firebaseService.firestore;
   String? get _userId => _firebaseService.currentUserId;
 
-  // ─────────────────────────────────────────────
-  // WRITE
-  // ─────────────────────────────────────────────
 
   /// Record one question attempt and update topic stats atomically.
   /// Returns the new Firestore document ID.
@@ -93,9 +90,6 @@ class ProgressTrackingService {
     });
   }
 
-  // ─────────────────────────────────────────────
-  // READ
-  // ─────────────────────────────────────────────
 
   /// Fetch stats for a single topic. Returns null if never attempted.
   Future<TopicStats?> getTopicStats(String topicId) async {
@@ -173,9 +167,6 @@ class ProgressTrackingService {
     return snapshot.docs.map(Attempt.fromSnapshot).toList();
   }
 
-  // ─────────────────────────────────────────────
-  // ADAPTIVE SELECTION
-  // ─────────────────────────────────────────────
 
   /// Compute a weight for every topic in [availableTopics].
   /// New/unseen topics receive a default weight of 0.7 to encourage exploration.

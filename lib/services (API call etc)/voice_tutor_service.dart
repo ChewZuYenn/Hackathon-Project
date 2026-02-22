@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
-/// Response from a single voice turn (STT → AI chat → TTS).
+/// Response from a single voice turn (STT to AI chat to TTS).
 class VoiceTurnResult {
   final String transcript;
   final String replyText;
@@ -31,9 +31,6 @@ class ChatTurn {
 
 /// Service that communicates with the Voice Tutor backend.
 class VoiceTutorService {
-  /// Base URL from .env
-  /// Android emulator default: http://10.0.2.2:3000
-  /// Real device: set to your computer's local IP, e.g. http://192.168.1.5:3000
   static String get _baseUrl {
     final url = dotenv.env['VOICE_TUTOR_BACKEND_URL'];
     if (url == null || url.isEmpty) {
@@ -47,7 +44,7 @@ class VoiceTutorService {
   static const Duration _timeout = Duration(seconds: 60);
   static const int _maxRetries = 2;
 
-  // ── Public API ─────────────────────────────────────────────────────────────
+  //Public API
 
   Future<VoiceTurnResult> sendVoiceTurn({
     required File audioFile,
@@ -81,7 +78,44 @@ class VoiceTutorService {
     throw lastError!;
   }
 
-  // ── Private ────────────────────────────────────────────────────────────────
+  /// Sends a text transcript to the backend for AI chat + TTS.
+  /// Includes question text and working space so the AI has full context.
+  Future<VoiceTurnResult> sendChatTurn({
+    required String userText,
+    required List<ChatTurn> history,
+    Map<String, String>? examContext,
+    String questionText = '',
+    String workingSpace = '',
+  }) async {
+    Exception? lastError;
+
+    for (int attempt = 1; attempt <= _maxRetries; attempt++) {
+      try {
+        return await _doChatTurn(
+          userText: userText,
+          history: history,
+          examContext: examContext ?? {},
+          questionText: questionText,
+          workingSpace: workingSpace,
+        );
+      } catch (e) {
+        lastError = e is Exception ? e : Exception(e.toString());
+
+        final msg = e.toString();
+        if (msg.contains('Permission') || msg.contains('400')) break;
+
+        if (attempt < _maxRetries) {
+          debugPrint(
+              '[VoiceTutorService] Chat attempt $attempt failed: $msg — retrying in ${2 * attempt}s…');
+          await Future.delayed(Duration(seconds: 2 * attempt));
+        }
+      }
+    }
+
+    throw lastError!;
+  }
+
+  //Private
 
   Future<VoiceTurnResult> _doVoiceTurn({
     required File audioFile,
@@ -119,6 +153,78 @@ class VoiceTutorService {
       transcript: data['transcript'] as String? ?? '',
       replyText: data['replyText'] as String? ?? '',
       audioBase64: data['audioBase64'] as String? ?? '',
+    );
+  }
+
+  /// Text-based chat turn: calls /chat then /tts (no audio upload needed).
+  Future<VoiceTurnResult> _doChatTurn({
+    required String userText,
+    required List<ChatTurn> history,
+    required Map<String, String> examContext,
+    String questionText = '',
+    String workingSpace = '',
+  }) async {
+    final baseUrl = _baseUrl;
+    debugPrint('[VoiceTutorService] Sending text to $baseUrl/chat');
+
+    //Get AI reply from /chat
+    final chatUri = Uri.parse('$baseUrl/chat');
+    final http.Response chatResponse;
+    try {
+      chatResponse = await http.post(
+        chatUri,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'userText': userText,
+          'history': history.map((t) => t.toJson()).toList(),
+          'examContext': examContext,
+          'questionText': questionText,
+          'workingSpace': workingSpace,
+        }),
+      ).timeout(_timeout);
+    } on SocketException catch (e) {
+      throw Exception(
+          'Network error connecting to $baseUrl — is the backend running? ($e)');
+    } on http.ClientException catch (e) {
+      throw Exception('HTTP client error: $e');
+    }
+
+    _assertOk(chatResponse, '/chat');
+    final chatData = jsonDecode(chatResponse.body) as Map<String, dynamic>;
+    final replyText = chatData['replyText'] as String? ?? '';
+
+    if (replyText.isEmpty) {
+      return VoiceTurnResult(
+        transcript: userText,
+        replyText: "Sorry, I couldn't generate a response. Please try again.",
+        audioBase64: '',
+      );
+    }
+
+    //Get TTS audio from /tts
+    String audioBase64 = '';
+    try {
+      final ttsUri = Uri.parse('$baseUrl/tts');
+      final ttsResponse = await http.post(
+        ttsUri,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'text': replyText}),
+      ).timeout(_timeout);
+
+      if (ttsResponse.statusCode == 200) {
+        final ttsData = jsonDecode(ttsResponse.body) as Map<String, dynamic>;
+        audioBase64 = ttsData['audioBase64'] as String? ?? '';
+      } else {
+        debugPrint('[VoiceTutorService] TTS failed (${ttsResponse.statusCode}), skipping audio');
+      }
+    } catch (e) {
+      debugPrint('[VoiceTutorService] TTS error: $e — returning text only');
+    }
+
+    return VoiceTurnResult(
+      transcript: userText,
+      replyText: replyText,
+      audioBase64: audioBase64,
     );
   }
 

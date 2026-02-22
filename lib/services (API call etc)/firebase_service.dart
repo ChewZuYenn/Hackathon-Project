@@ -13,7 +13,7 @@ class FirebaseService {
 
   bool _initialized = false;
 
-  /// Initialize Firebase — call once in main()
+  /// Initialize Firebase ,call once in main()
   Future<void> initialize() async {
     if (_initialized) return;
     await Firebase.initializeApp();

@@ -160,7 +160,7 @@ class GeminiQuestionService {
     return Question.fromJson(questionData);
   }
 
-  // ─── JSON Parsing ─────────────────────────────────────────────────────────
+  // JSON Parsing
 
   Map<String, dynamic> _parseQuestionJson(String text) {
     String cleaned = text.trim();
@@ -231,7 +231,7 @@ class GeminiQuestionService {
     };
   }
 
-  // ─── Validation ───────────────────────────────────────────────────────────
+  //Validation
 
   void _validateQuestionData(Map<String, dynamic> data) {
     for (final field in [

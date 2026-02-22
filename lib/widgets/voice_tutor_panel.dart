@@ -38,18 +38,18 @@ class VoiceTutorPanel extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── Header ────────────────────────────────────────────────────────
+          // Header
           _buildHeader(),
 
-          // ── Body ──────────────────────────────────────────────────────────
+          // Body
           Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
               children: [
                 _buildMicButton(context),
                 const SizedBox(height: 16),
-                if (controller.transcript.isNotEmpty) _buildTranscript(),
-                if (controller.replyText.isNotEmpty)   _buildReply(),
+                if (controller.transcript.isNotEmpty || controller.liveWords.isNotEmpty) _buildTranscript(),
+                if (controller.replyText.isNotEmpty || controller.isProcessing) _buildReply(),
                 if (controller.hasError)                _buildError(),
                 if (controller.isPlaying)               _buildPlayingIndicator(),
                 if (controller.history.isNotEmpty)      _buildClearButton(context),
@@ -110,7 +110,7 @@ class VoiceTutorPanel extends StatelessWidget {
     String label;
 
     switch (state) {
-      case VoiceTutorState.recording:
+      case VoiceTutorState.listening:
         buttonColor = Colors.red;
         shadowColor = Colors.red.withOpacity(0.45);
         icon  = Icons.stop_circle_outlined;
@@ -162,7 +162,7 @@ class VoiceTutorPanel extends StatelessWidget {
             Stack(
               alignment: Alignment.center,
               children: [
-                if (state == VoiceTutorState.recording)
+                if (state == VoiceTutorState.listening)
                   _PulseRing(color: buttonColor),
                 AnimatedContainer(
                   duration: const Duration(milliseconds: 250),
@@ -200,6 +200,12 @@ class VoiceTutorPanel extends StatelessWidget {
   }
 
   Widget _buildTranscript() {
+    final text = controller.transcript.isNotEmpty
+        ? controller.transcript
+        : controller.liveWords;
+
+    if (text.isEmpty) return const SizedBox.shrink();
+
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.only(bottom: 12),
@@ -212,14 +218,24 @@ class VoiceTutorPanel extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'You said:',
-            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.black54),
+          Row(
+            children: [
+              Icon(Icons.person_outline, size: 14, color: Colors.grey.shade700),
+              const SizedBox(width: 4),
+              const Text(
+                'You:',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.black54),
+              ),
+            ],
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 6),
           Text(
-            controller.transcript,
-            style: const TextStyle(fontSize: 15, color: Colors.black87),
+            text,
+            style: TextStyle(
+              fontSize: 15,
+              color: controller.transcript.isEmpty ? Colors.black54 : Colors.black87,
+              fontStyle: controller.transcript.isEmpty ? FontStyle.italic : FontStyle.normal,
+            ),
           ),
         ],
       ),
@@ -227,6 +243,10 @@ class VoiceTutorPanel extends StatelessWidget {
   }
 
   Widget _buildReply() {
+    final isThinking = controller.isProcessing;
+    if (!isThinking && controller.replyText.isEmpty) {
+      return const SizedBox.shrink();
+    }
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.only(bottom: 12),
@@ -253,11 +273,24 @@ class VoiceTutorPanel extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 4),
-          Text(
-            controller.replyText,
-            style: const TextStyle(fontSize: 15, color: Colors.black87, height: 1.4),
-          ),
+          const SizedBox(height: 6),
+          if (isThinking)
+            Row(
+              children: [
+                SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(color: Colors.purple.shade300, strokeWidth: 2),
+                ),
+                const SizedBox(width: 8),
+                Text('Thinking…', style: TextStyle(color: Colors.purple.shade400, fontStyle: FontStyle.italic)),
+              ],
+            )
+          else
+            Text(
+              controller.replyText,
+              style: const TextStyle(fontSize: 15, color: Colors.black87, height: 1.4),
+            ),
         ],
       ),
     );
@@ -324,7 +357,6 @@ class VoiceTutorPanel extends StatelessWidget {
   }
 }
 
-/// Simple CSS-style pulse ring animation.
 class _PulseRing extends StatefulWidget {
   final Color color;
   const _PulseRing({required this.color});
