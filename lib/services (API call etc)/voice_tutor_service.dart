@@ -201,7 +201,6 @@ class VoiceTutorService {
       );
     }
 
-    //Get TTS audio from /tts
     String audioBase64 = '';
     try {
       final ttsUri = Uri.parse('$baseUrl/tts');
@@ -209,16 +208,17 @@ class VoiceTutorService {
         ttsUri,
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'text': replyText}),
-      ).timeout(_timeout);
+      ).timeout(const Duration(seconds: 12));
 
       if (ttsResponse.statusCode == 200) {
         final ttsData = jsonDecode(ttsResponse.body) as Map<String, dynamic>;
         audioBase64 = ttsData['audioBase64'] as String? ?? '';
+        debugPrint('[VoiceTutorService] ElevenLabs TTS succeeded (${audioBase64.length ~/ 1024}KB)');
       } else {
-        debugPrint('[VoiceTutorService] TTS failed (${ttsResponse.statusCode}), skipping audio');
+        debugPrint('[VoiceTutorService] TTS failed (${ttsResponse.statusCode}) — will use device TTS');
       }
     } catch (e) {
-      debugPrint('[VoiceTutorService] TTS error: $e — returning text only');
+      debugPrint('[VoiceTutorService] TTS error: $e — will use device TTS');
     }
 
     return VoiceTurnResult(

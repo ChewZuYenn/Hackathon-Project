@@ -33,7 +33,13 @@ if (missing.length) {
 const USE_WHISPER_STT = !!process.env.OPENAI_API_KEY;
 console.log(`STT backend: ${USE_WHISPER_STT ? 'OpenAI Whisper' : 'Gemini (no OPENAI_API_KEY set)'}`);
 
-// ── Helpers ─────────────────────────────────────────────────────────────────
+// ── Mock mode (set MOCK_MODE=true in .env to bypass all external APIs) ───────
+const MOCK_MODE = process.env.MOCK_MODE === 'true';
+if (MOCK_MODE) {
+  console.log('🧪  MOCK_MODE enabled — all API calls bypassed. Instant canned responses.');
+}
+
+//Helpers 
 
 /** OpenAI Whisper STT */
 async function transcribeWithWhisper(audioBuffer, mimeType) {
@@ -91,7 +97,7 @@ async function chatWithGemini(userText, history, examContext, questionText, work
 
   const body = {
     contents,
-    generationConfig: { temperature: 0.7, maxOutputTokens: 300, topP: 0.95 },
+    generationConfig: { temperature: 0.7, maxOutputTokens: 200, topP: 0.95 },
     safetySettings: [
       { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
       { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
@@ -144,7 +150,7 @@ async function synthesizeWithElevenLabs(text) {
   return Buffer.from(await res.arrayBuffer());
 }
 
-// ── Routes ───────────────────────────────────────────────────────────────────
+//Routes 
 
 /** Health check */
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
@@ -183,6 +189,18 @@ app.post('/chat', async (req, res) => {
   try {
     const { userText, history = [], examContext = {}, questionText = '', workingSpace = '' } = req.body;
     if (!userText) return res.status(400).json({ error: 'userText is required' });
+
+    //  Mock mode: return a canned reply instantly 
+    if (MOCK_MODE) {
+      const mockReplies = [
+        `Great question! In ${examContext?.subject || 'this subject'}, the key idea is to break the problem into smaller steps and work through each one carefully. Keep going, you're doing great!`,
+        `That's a really good thing to ask about. Let me explain — focus on the fundamental concept first, then apply it to the specific question. You're on the right track!`,
+        `Excellent thinking! The hint here is to consider what information you already know and what the question is really asking for. Take it step by step.`,
+      ];
+      const reply = mockReplies[Math.floor(Math.random() * mockReplies.length)];
+      console.log(`[/chat MOCK] user: "${userText.substring(0, 40)}…" → canned reply`);
+      return res.json({ replyText: reply });
+    }
 
     console.log(`[/chat] user: "${userText.substring(0, 60)}…"  workingSpace: ${workingSpace ? `"${workingSpace.substring(0, 40)}…"` : '(none)'}`);
 
@@ -315,7 +333,7 @@ async function transcribeWithGeminiFallback(audioBuffer, mimeType) {
   return text;
 }
 
-// ── Start ────────────────────────────────────────────────────────────────────
+// Start
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`✅  Voice Tutor backend listening on http://localhost:${PORT}`);

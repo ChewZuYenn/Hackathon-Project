@@ -1,4 +1,7 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_tts/flutter_tts.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import '../services (API call etc)/voice_tutor_service.dart';
 import '../services (API call etc)/tts_player_service.dart';
@@ -16,8 +19,10 @@ class VoiceTutorController extends ChangeNotifier {
   final stt.SpeechToText _speech = stt.SpeechToText();
   final VoiceTutorService _api = VoiceTutorService();
   final TtsPlayerService _player = TtsPlayerService();
+  final FlutterTts _flutterTts = FlutterTts();
 
   bool _disposed = false;
+  bool _flutterTtsReady = false;
   bool _speechAvailable = false;
   bool _processingStarted = false; // guard against double-process from status+error callbacks
 
@@ -39,7 +44,7 @@ class VoiceTutorController extends ChangeNotifier {
   bool get isPlaying => _state == VoiceTutorState.playing;
   bool get isIdle => _state == VoiceTutorState.idle;
   bool get hasError => _state == VoiceTutorState.error;
-  bool get isRecording => _state == VoiceTutorState.listening; 
+  bool get isRecording => _state == VoiceTutorState.listening;
 
   /// Conversation history – last [maxHistory] turns.
   final List<ChatTurn> _history = [];
@@ -58,6 +63,22 @@ class VoiceTutorController extends ChangeNotifier {
   /// Session ID for local history storage (e.g. "examType_subject_topic").
   String _sessionId = 'default';
 
+
+  /// Initialises FlutterTts engine (call once during setup).
+  Future<void> _initFlutterTts() async {
+    if (_flutterTtsReady) return;
+    try {
+      await _flutterTts.setLanguage('en-US');
+      await _flutterTts.setSpeechRate(0.5);
+      await _flutterTts.setVolume(1.0);
+      await _flutterTts.setPitch(1.0);
+      // Do NOT use awaitSpeakCompletion(true) — its internal Future never resolves
+      _flutterTtsReady = true;
+      debugPrint('[VoiceTutor] FlutterTts initialised');
+    } catch (e) {
+      debugPrint('[VoiceTutor] FlutterTts init error: $e');
+    }
+  }
 
   /// Call after setting [examContext] to load persisted history from storage.
   Future<void> loadHistory() async {
@@ -91,6 +112,7 @@ class VoiceTutorController extends ChangeNotifier {
   /// Stops playback immediately.
   Future<void> stopPlayback() async {
     await _player.stop();
+    await _flutterTts.stop();
     _setState(VoiceTutorState.idle);
   }
 
@@ -105,8 +127,18 @@ class VoiceTutorController extends ChangeNotifier {
     _setState(VoiceTutorState.idle);
   }
 
-  /// Sends an audio file to the backend for transcription + AI chat + TTS.
+  /// Requests mic permission, then starts listening via on-device STT.
   Future<void> _startListening() async {
+    final micStatus = await Permission.microphone.request();
+    if (!micStatus.isGranted) {
+      _setError(
+        'Microphone permission is required for the voice tutor.\n'
+        'Please enable it in your device Settings → Apps → Permissions.',
+      );
+      return;
+    }
+
+    _initFlutterTts();
     _errorMessage = '';
     _liveWords = '';
     _transcript = '';
@@ -118,12 +150,20 @@ class VoiceTutorController extends ChangeNotifier {
       _speechAvailable = await _speech.initialize(
         onError: (error) {
           debugPrint('[VoiceTutor] Speech error: ${error.errorMsg}');
-          if (error.errorMsg == 'error_speech_timeout' ||
-              error.errorMsg == 'error_no_match') {
-            // On web/Chrome these fire when the session ends ,process whatever we captured
+          // Treat these Android errors as non-fatal: session ended, process whatever we captured.
+          // error_client  = Android recognizer disconnected (very common on emulator)
+          // error_no_match = no recognition match
+          // error_speech_timeout = silence timeout
+          const nonFatalErrors = {
+            'error_speech_timeout',
+            'error_no_match',
+            'error_client',
+          };
+          if (nonFatalErrors.contains(error.errorMsg)) {
             if (_state == VoiceTutorState.listening && !_processingStarted) {
               _processingStarted = true;
-              _processTranscript();
+              // Small delay so any in-flight onResult callbacks can arrive first
+              Future.delayed(const Duration(milliseconds: 500), _processTranscript);
             }
           } else {
             _setError('Speech recognition error: ${error.errorMsg}');
@@ -133,14 +173,16 @@ class VoiceTutorController extends ChangeNotifier {
           debugPrint('[VoiceTutor] Speech status: $status');
           if (status == 'done' && _state == VoiceTutorState.listening && !_processingStarted) {
             _processingStarted = true;
-            _processTranscript();
+            // Wait 500ms so that any pending onResult with recognizedWords can update
+            // _transcript / _liveWords before we process them.
+            Future.delayed(const Duration(milliseconds: 500), _processTranscript);
           }
         },
       );
 
       if (!_speechAvailable) {
         _setError(
-            'Speech recognition is not available. Please check microphone permissions in device settings.');
+            'Speech recognition is not available on this device. Please check microphone permissions.');
         return;
       }
     }
@@ -155,18 +197,22 @@ class VoiceTutorController extends ChangeNotifier {
 
     await _speech.listen(
       onResult: (result) {
-        _liveWords = result.recognizedWords;
-        _safeNotify();
-        if (result.finalResult) {
+        // Capture every partial result so we always have the latest words
+        if (result.recognizedWords.isNotEmpty) {
+          _liveWords = result.recognizedWords;
+          _safeNotify();
+        }
+        if (result.finalResult && result.recognizedWords.isNotEmpty) {
           _transcript = result.recognizedWords;
-          debugPrint('[VoiceTutor] Final result: "${_transcript}"');
+          debugPrint('[VoiceTutor] Final result: "$_transcript"');
         }
       },
       listenFor: const Duration(seconds: 60),
-      pauseFor: const Duration(seconds: 5),
-      localeId: 'en_US',
+      pauseFor: const Duration(seconds: 3),
+      localeId: 'en-US',
       listenOptions: stt.SpeechListenOptions(
-        listenMode: stt.ListenMode.dictation,
+        // deviceDefault is more reliable than dictation on Android emulator
+        listenMode: stt.ListenMode.deviceDefault,
         cancelOnError: false,
         partialResults: true,
       ),
@@ -188,8 +234,7 @@ class VoiceTutorController extends ChangeNotifier {
     final text = (_transcript.isNotEmpty ? _transcript : _liveWords).trim();
 
     if (text.isEmpty) {
-      // User didn't say anything
-      // Just silently return to idle so they can tap again without an error.
+      // User didn't say anything — silently return to idle so they can tap again.
       _setState(VoiceTutorState.idle);
       return;
     }
@@ -230,20 +275,66 @@ class VoiceTutorController extends ChangeNotifier {
 
       _safeNotify();
 
-      // Play audio response if available
+      // Play audio response – prefer backend MP3, fall back to on-device TTS.
+      _setState(VoiceTutorState.playing);
       if (result.audioBase64.isNotEmpty) {
-        _setState(VoiceTutorState.playing);
-        await _player.playBase64Mp3(result.audioBase64);
-        if (_state == VoiceTutorState.playing) {
-          _setState(VoiceTutorState.idle);
+        try {
+          await _player.playBase64Mp3(result.audioBase64);
+        } catch (e) {
+          debugPrint('[VoiceTutor] Backend audio playback failed, using device TTS: $e');
+          await _speakWithDeviceTts(_replyText);
         }
       } else {
+        // No backend audio – use on-device TTS so user always gets a voice reply.
+        debugPrint('[VoiceTutor] No backend audio received – using device TTS fallback.');
+        await _speakWithDeviceTts(_replyText);
+      }
+
+      if (_state == VoiceTutorState.playing) {
         _setState(VoiceTutorState.idle);
       }
     } catch (e) {
       final msg = e.toString().replaceAll('Exception: ', '');
       debugPrint('[VoiceTutorController] Error: $msg');
       _setError(_friendlyError(msg));
+    }
+  }
+
+  /// Speaks [text] using the device's built-in TTS engine.
+  /// Uses a Completer+timeout so the UI is never stuck in the 'playing' state.
+  Future<void> _speakWithDeviceTts(String text) async {
+    if (text.isEmpty) return;
+    try {
+      await _initFlutterTts();
+      debugPrint('[VoiceTutor] Device TTS speaking: ${text.substring(0, text.length.clamp(0, 60))}…');
+
+      // Register handlers BEFORE speak() so we never miss the completion event.
+      final completer = Completer<void>();
+      _flutterTts.setCompletionHandler(() {
+        debugPrint('[VoiceTutor] Device TTS handler: complete');
+        if (!completer.isCompleted) completer.complete();
+      });
+      _flutterTts.setErrorHandler((msg) {
+        debugPrint('[VoiceTutor] Device TTS handler: error — $msg');
+        if (!completer.isCompleted) completer.complete();
+      });
+      _flutterTts.setCancelHandler(() {
+        debugPrint('[VoiceTutor] Device TTS handler: cancelled');
+        if (!completer.isCompleted) completer.complete();
+      });
+
+      await _flutterTts.speak(text);
+
+      // Wait for completion with a hard 30-second timeout so we NEVER get stuck.
+      await completer.future.timeout(
+        const Duration(seconds: 30),
+        onTimeout: () {
+          debugPrint('[VoiceTutor] Device TTS timed out — forcing idle');
+        },
+      );
+      debugPrint('[VoiceTutor] Device TTS complete.');
+    } catch (e) {
+      debugPrint('[VoiceTutor] Device TTS error: $e');
     }
   }
 
@@ -289,6 +380,7 @@ class VoiceTutorController extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _speech.stop();
+    _flutterTts.stop();
     _player.dispose().catchError((e) {
       debugPrint('[VoiceTutorController] player dispose error: $e');
     });
