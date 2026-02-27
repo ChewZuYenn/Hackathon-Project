@@ -21,7 +21,7 @@ app.use(express.json({ limit: '10mb' }));
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
 
-// ── ENV validation ──────────────────────────────────────────────────────────
+//  ENV validation
 const REQUIRED_VARS = ['GEMINI_API_KEY', 'ELEVENLABS_API_KEY', 'ELEVENLABS_VOICE_ID'];
 const missing = REQUIRED_VARS.filter(v => !process.env[v]);
 if (missing.length) {
@@ -33,7 +33,7 @@ if (missing.length) {
 const USE_WHISPER_STT = !!process.env.OPENAI_API_KEY;
 console.log(`STT backend: ${USE_WHISPER_STT ? 'OpenAI Whisper' : 'Gemini (no OPENAI_API_KEY set)'}`);
 
-// ── Mock mode (set MOCK_MODE=true in .env to bypass all external APIs) ───────
+//  Mock mode (set MOCK_MODE=true in .env to bypass all external APIs) 
 const MOCK_MODE = process.env.MOCK_MODE === 'true';
 if (MOCK_MODE) {
   console.log('🧪  MOCK_MODE enabled — all API calls bypassed. Instant canned responses.');
