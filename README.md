@@ -132,56 +132,84 @@ Before you begin, ensure you have the following installed:
 
 ## 🚀 Setup Instructions
 
-### 1. Flutter Project Setup
-1. Clone the repository and navigate to the project directory:
+> **Quick Start Summary**
+> 1. Fill in both `.env` files (Flutter root + `backend/`)
+> 2. `cd backend && npm install && node server.js` ← keep this terminal open
+> 3. In a new terminal: `flutter pub get && flutter run`
+
+---
+
+### Step 1 — Flutter Environment
+
+1. Clone the repository and open the project folder:
    ```bash
+   git clone <repo-url>
    cd hackathonproject
    ```
+
 2. Install Flutter dependencies:
    ```bash
    flutter pub get
    ```
-3. Create a `.env` file in the root directory of the Flutter project (`hackathonproject/.env`):
+
+3. Create **`hackathonproject/.env`** (Flutter root — NOT inside `backend/`):
    ```env
-   # Used for generating questions
-   GEMINI_API_KEY="your_gemini_api_key_here"
-   
-   # Used for the Voice Tutor (can be the same as above, or separate for quota management)
-   GEMINI_TUTOR_API_KEY="your_gemini_api_key_here"
-   
-   # URL for the Node.js TTS backend 
-   # Use http://10.0.2.2:3000 for Android Emulator
-   # Use your local IP (e.g., http://192.168.1.5:3000) for physical devices
-   VOICE_TUTOR_BACKEND_URL="http://10.0.2.2:3000"
+   # Gemini API key (used for question generation)
+   GEMINI_API_KEY=your_gemini_api_key_here
+
+   # URL of the Node.js backend
+   # ▸ Android Emulator  → http://10.0.2.2:3000
+   # ▸ Physical device   → http://<your-local-IP>:3000  (e.g. http://192.168.1.5:3000)
+   VOICE_TUTOR_BACKEND_URL=http://10.0.2.2:3000
    ```
 
-### 2. Node.js Backend Setup (TTS)
-1. Navigate to the backend directory:
+---
+
+### Step 2 — Node.js Backend (AI Chat + TTS)
+
+1. Move into the backend folder:
    ```bash
    cd backend
    ```
-2. Install NPM dependencies:
+
+2. Install dependencies:
    ```bash
    npm install
    ```
-3. Create a `.env` file inside the `backend` directory (`hackathonproject/backend/.env`):
+
+3. Create **`hackathonproject/backend/.env`**:
    ```env
-   # ElevenLabs Setup
-   ELEVENLABS_API_KEY="your_elevenlabs_api_key_here"
-   ELEVENLABS_VOICE_ID="your_preferred_voice_id_here"
-   ELEVENLABS_MODEL_ID="eleven_turbo_v2"
+   # Gemini — powers the AI tutor chat
+   GEMINI_API_KEY=your_gemini_api_key_here
+
+   # ElevenLabs — high-quality voice responses
+   ELEVENLABS_API_KEY=your_elevenlabs_api_key_here
+   ELEVENLABS_VOICE_ID=your_voice_id_here
+   ELEVENLABS_MODEL_ID=eleven_turbo_v2
+
    PORT=3000
+
+   # Set to true to bypass all external APIs during UI testing
+   MOCK_MODE=false
    ```
-   *(Note: Ensure your ElevenLabs API key has `text_to_speech` permissions enabled).*
-4. Start the backend server:
+   > ⚠️ Make sure your ElevenLabs API key has **`text_to_speech`** permission enabled in the ElevenLabs dashboard.
+
+4. Start the backend server (**must run from inside `backend/`**):
    ```bash
    node server.js
    ```
-   You should see: `✅ Voice Tutor backend listening on http://localhost:3000`
+   You should see:
+   ```
+   ✅  Voice Tutor backend listening on http://localhost:3000
+   ```
 
-### 3. Run the App
-With the backend running in a separate terminal window, return to the root folder and run the Flutter app:
+---
+
+### Step 3 — Run the Flutter App
+
+Open a **new terminal** (keep the backend running), go back to the project root, and launch the app:
 ```bash
+cd hackathonproject
 flutter run
 ```
 
