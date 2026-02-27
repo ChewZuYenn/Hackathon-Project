@@ -82,7 +82,7 @@ async function chatWithGemini(userText, history, examContext, questionText, work
     systemPrompt += `\n\nThe student's working space (their notes and calculations so far) shows:\n"${workingSpace.trim()}"`;
   }
 
-  systemPrompt += `\n\nBe helpful, concise (2-4 sentences), and encouraging. If the student has working shown, reference it in your response. Use clear, simple language. Never use markdown, bullet points, or special symbols – plain prose only, since your response will be spoken aloud.`;
+  systemPrompt += `\n\nBe helpful and encouraging. Keep your reply to 2-3 sentences maximum. Use plain conversational language. Never use markdown, bullet points, or special symbols — plain prose only, as your response will be spoken aloud.`;
 
   contents.push({ role: 'user', parts: [{ text: systemPrompt }] });
   contents.push({ role: 'model', parts: [{ text: "Got it! I'm ready to help this student." }] });
@@ -97,7 +97,11 @@ async function chatWithGemini(userText, history, examContext, questionText, work
 
   const body = {
     contents,
-    generationConfig: { temperature: 0.7, maxOutputTokens: 200, topP: 0.95 },
+    generationConfig: {
+      temperature: 0.7,
+      maxOutputTokens: 150,
+      topP: 0.95,
+    },
     safetySettings: [
       { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
       { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
@@ -118,7 +122,17 @@ async function chatWithGemini(userText, history, examContext, questionText, work
   }
 
   const data = await res.json();
-  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+
+  // gemini-2.5-flash is a thinking model: its response may contain multiple parts,
+  // where thought parts (internal reasoning) come BEFORE the actual answer.
+  // Grabbing parts[0].text would return the thinking text, not the answer.
+  // Fix: filter out thought parts and join the remaining text parts.
+  const parts = data?.candidates?.[0]?.content?.parts ?? [];
+  const text = parts
+    .filter(p => !p.thought)   // skip internal reasoning parts
+    .map(p => p.text || '')    // extract text
+    .join('') || '';
+
   if (!text) throw new Error('Empty response from Gemini');
   return text.trim();
 }

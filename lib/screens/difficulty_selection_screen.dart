@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../utils (Helper Function)/app_theme.dart';
 import 'question_screen.dart';
 
 class DifficultySelectionScreen extends StatelessWidget {
@@ -15,58 +16,44 @@ class DifficultySelectionScreen extends StatelessWidget {
     required this.topic,
   });
 
+  static const _difficulties = ['Beginner', 'Intermediate', 'Advance'];
+
   @override
   Widget build(BuildContext context) {
-    final difficulties = [
-      {'level': 'Beginner', 'color': const Color(0xFFC8E6C9)},
-      {'level': 'Intermediate', 'color': const Color(0xFFFFE082)},
-      {'level': 'Advance', 'color': const Color(0xFFB3E5FC)},
-    ];
-
     return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        title: Text(
-          '$topic - Select Difficulty',
-          style: const TextStyle(
-            fontWeight: FontWeight.bold,
-            fontSize: 20,
-          ),
-        ),
-        centerTitle: true,
-        backgroundColor: Colors.white,
-        elevation: 0,
-        foregroundColor: Colors.black87,
-      ),
+      backgroundColor: AppTheme.background,
+      appBar: AppTheme.gradientAppBar(title: topic),
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.all(20.0),
+          padding: const EdgeInsets.all(20),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'Choose difficulty level for $topic',
-                style: const TextStyle(
-                  fontSize: 16,
-                  color: Colors.black54,
-                ),
-              ),
-              const SizedBox(height: 30),
+              const SizedBox(height: 4),
+              Text('Choose your difficulty level', style: AppTheme.caption),
+              const SizedBox(height: 24),
               Expanded(
-                child: Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: difficulties.map((diff) {
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 20.0),
-                        child: _buildDifficultyCard(
+                child: Column(
+                  children: _difficulties.map((level) => Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.only(bottom: 16),
+                      child: _DifficultyCard(
+                        level: level,
+                        onTap: () => Navigator.push(
                           context,
-                          diff['level'] as String,
-                          diff['color'] as Color,
+                          MaterialPageRoute(
+                            builder: (_) => QuestionScreen(
+                              country: country,
+                              examType: examType,
+                              subject: subject,
+                              topic: topic,
+                              difficulty: level,
+                            ),
+                          ),
                         ),
-                      );
-                    }).toList(),
-                  ),
+                      ),
+                    ),
+                  )).toList(),
                 ),
               ),
             ],
@@ -75,53 +62,83 @@ class DifficultySelectionScreen extends StatelessWidget {
       ),
     );
   }
+}
 
-  Widget _buildDifficultyCard(
-    BuildContext context,
-    String level,
-    Color color,
-  ) {
-    return InkWell(
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => QuestionScreen(
-              country: country,
-              examType: examType,
-              subject: subject,
-              topic: topic,
-              difficulty: level,
+class _DifficultyCard extends StatelessWidget {
+  final String level;
+  final VoidCallback onTap;
+
+  const _DifficultyCard({required this.level, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = AppTheme.difficultyColor(level);
+    final emoji = AppTheme.difficultyEmoji(level);
+    final desc  = AppTheme.difficultyDescription(level);
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: AppTheme.radiusLg,
+        child: Container(
+          width: double.infinity,
+          decoration: BoxDecoration(
+            color: AppTheme.cardBg,
+            borderRadius: AppTheme.radiusLg,
+            boxShadow: AppTheme.cardShadow,
+            border: Border.all(
+              color: color.withOpacity(0.25),
+              width: 1.5,
             ),
           ),
-        );
-      },
-      borderRadius: BorderRadius.circular(20),
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
-        decoration: BoxDecoration(
-          color: color,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: Colors.black26,
-            width: 2,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.1),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Text(
-          level,
-          textAlign: TextAlign.center,
-          style: const TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-            color: Colors.black87,
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 0),
+          child: Row(
+            children: [
+              // Emoji badge
+              Container(
+                width: 60,
+                height: 60,
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Center(
+                  child: Text(emoji, style: const TextStyle(fontSize: 28)),
+                ),
+              ),
+              const SizedBox(width: 20),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      level,
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: color,
+                        letterSpacing: -0.3,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      desc,
+                      style: AppTheme.caption,
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(Icons.chevron_right, color: color, size: 22),
+              ),
+            ],
           ),
         ),
       ),

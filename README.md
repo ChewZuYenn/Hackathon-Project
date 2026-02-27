@@ -1,8 +1,104 @@
 # Flutter AI Tutor App 🎓
 
-A smart educational Flutter application built with **Google Gemini**, **ElevenLabs Text-to-Speech**, and **On-Device Speech Recognition**. It generates practice questions, allows students to show their working (via typing or freestyle drawing), and provides a fully interactive voice-based AI Tutor to guide them through their mistakes.
+---
+
+## 📋 Project Description
+
+### Purpose & Problem Statement
+
+Access to quality, personalised academic support is unequal. Students preparing for high-stakes exams — IGCSE, A-Level, SPM, and similar — often cannot afford one-to-one tutoring, and generic study apps do not adapt to individual weaknesses or explain concepts in a conversational way.
+
+**Flutter AI Tutor** solves this by putting an intelligent, voice-enabled tutor in every student's pocket — completely free. The app:
+
+- **Generates exam-style practice questions** dynamically, tailored to the student's chosen subject, topic, and difficulty level.
+- **Listens to the student speak** and responds in natural spoken audio — replicating a real tutoring conversation.
+- **Adapts the next topic** based on the student's performance history, focusing effort on areas of weakness.
+- **Lets students show their working** — by typing or drawing equations freehand — and gives AI feedback on their reasoning, not just their final answer.
+
+### Alignment with AI & the UN Sustainable Development Goals (SDGs)
+
+| SDG | How the app contributes |
+|---|---|
+| **SDG 4 — Quality Education** | Delivers personalised, adaptive, AI-driven tutoring to any student with a smartphone, closing the gap between students who can and cannot afford private tutors. |
+| **SDG 10 — Reduced Inequalities** | Lowers barriers to academic success by making high-quality study tools free and accessible across income levels and geography. |
+| **SDG 9 — Industry, Innovation & Infrastructure** | Demonstrates responsible, practical AI integration in education using state-of-the-art LLMs and on-device speech recognition. |
+
+The core AI engine (Google Gemini) is leveraged not just for content generation, but as an interactive conversational partner — making this a frontier application of generative AI in education.
 
 ---
+
+## 📖 Project Documentation
+
+### Technical Implementation — Technologies Used
+
+#### Google Technologies (Primary Stack)
+| Technology | Role |
+|---|---|
+| **Google Gemini API** (`gemini-2.0-flash`) | Generates exam-style questions and powers the conversational AI tutor with full question + working-space context |
+| **Flutter** | Cross-platform frontend for Android, iOS, and Web |
+| **Firebase Authentication** | Secure user login and identity management |
+| **Firebase Firestore** | Stores per-user progress, attempt history, and adaptive topic weights |
+| **Google Speech-to-Text** (on-device via `speech_to_text`) | Captures the student's spoken question in real time with no cloud round-trip |
+| **Google Text-to-Speech** (on-device via `flutter_tts`) | Speaks the AI tutor's response aloud when backend TTS is unavailable |
+
+#### Supporting Technologies
+| Technology | Role |
+|---|---|
+| **ElevenLabs TTS** | High-quality voice synthesis for the AI tutor's audio replies (via a Node.js backend proxy) |
+| **Node.js / Express** | Lightweight backend proxy that securely calls external TTS APIs and returns base64-encoded MP3 audio |
+| **just_audio** | Audio playback of MP3 responses from the backend |
+| **shared_preferences** | Local persistence of conversation history across sessions |
+
+---
+
+### Implementation Overview
+
+The app follows a clean layered architecture:
+
+```
+Student speaks
+     │
+     ▼
+[On-device STT] ──► transcript text
+     │
+     ▼
+[Node.js /chat] ──► Google Gemini API (with question context + working space)
+     │
+     ▼
+AI reply text ──► [Node.js /tts] ──► ElevenLabs MP3 audio
+     │
+     ▼
+[just_audio] plays MP3 ──► Student hears the tutor's voice
+```
+
+**Adaptive Learning Engine:** After every answered question, a weighted scoring algorithm (stored in Firestore) adjusts topic selection probability — topics with more recent failures appear more frequently, ensuring the student always practices where they need it most.
+
+**Handwriting Canvas:** A custom `CustomPainter`-based drawing surface lets students sketch equations and diagrams with their finger, simulating paper-based exam working.
+
+---
+
+### Innovation Highlights
+
+1. **Full voice loop on a mobile device** — the complete chain (speech → LLM → voice) runs with a single mic tap, with no manual text input required.
+2. **Context-aware AI tutor** — Gemini receives the exact exam question AND the student's typed/drawn working, enabling feedback that references what the student has actually written (not just a generic hint).
+3. **Adaptive topic selection** — the app learns which topics a student struggles with and weightedly prioritises them, making every session more effective than a fixed curriculum.
+4. **Graceful degradation** — if any external API fails, the app silently falls back: backend TTS → device TTS; backend AI → error message. The student's experience is never blocked by a partial outage.
+
+---
+
+### Challenges Faced
+
+| Challenge | Solution |
+|---|---|
+| Android `speech_to_text` fires `done` before the final recognised words arrive | Added a 500 ms delay before processing the transcript, giving Android time to deliver the final `onResult` callback |
+| `just_audio` `play()` resolves before audio finishes, causing the temp file to be deleted mid-playback | Subscribe to `processingStateStream` **before** calling `play()` so the completion event is never missed |
+| `FlutterTts.awaitSpeakCompletion(true)` Future never resolved on some Android builds | Replaced with a `Completer` + 30-second hard timeout, ensuring the UI always returns to idle |
+| ElevenLabs API key permissions (401 error) | Re-issued a key with full `text_to_speech` permission |
+| Gemini API quota exhaustion during testing | Added `MOCK_MODE=true` in backend `.env` to return instant canned responses, decoupling UI testing from API availability |
+
+---
+
+
 
 ## 🌟 Key Features
 

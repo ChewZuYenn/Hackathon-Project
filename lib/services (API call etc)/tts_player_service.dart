@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
@@ -26,41 +25,30 @@ class TtsPlayerService {
     }
 
     File? tempFile;
-    StreamSubscription<ProcessingState>? sub;
     try {
-      // Stop any current playback cleanly
-      await _player.stop();
+      // Stop any previous audio cleanly before starting a new one
+      if (_player.playing) {
+        await _player.stop();
+      }
 
-      // Decode and write to disk (just_audio needs a file URI on Android)
+      // Decode and write to disk (just_audio needs a real file URI on Android)
       final bytes = base64Decode(audioBase64);
       final dir = await getTemporaryDirectory();
       tempFile = File(
           '${dir.path}/tts_reply_${DateTime.now().millisecondsSinceEpoch}.mp3');
-      await tempFile.writeAsBytes(bytes);
+      await tempFile.writeAsBytes(bytes, flush: true);
 
       debugPrint(
-          '[TtsPlayer] Playing ${(bytes.length / 1024).toStringAsFixed(1)}KB MP3');
+          '[TtsPlayer] Loaded ${(bytes.length / 1024).toStringAsFixed(1)}KB MP3');
 
+      // Load the file into just_audio
       await _player.setFilePath(tempFile.path);
       _isPlaying = true;
 
-      // stop() call and firstWhere() returns immediately without playing anything.
-      final completer = Completer<void>();
-      sub = _player.processingStateStream.listen((state) {
-        if (state == ProcessingState.completed ||
-            state == ProcessingState.idle) {
-          if (!completer.isCompleted) completer.complete();
-        }
-      });
-
-      // resolves when the command is dispatched, not when audio finishes.
-      _player.play();
-
-      // Wait for the completed/idle state (with a generous timeout).
-      await completer.future.timeout(
-        const Duration(seconds: 90),
-        onTimeout: () => debugPrint('[TtsPlayer] Playback timeout — continuing'),
-      );
+      // In just_audio 0.9.x, play() returns a Future that completes when the
+      // player transitions from playing to not-playing (end of track or stop()).
+      // This is the correct, race-condition-free way to await actual completion.
+      await _player.play();
 
       _isPlaying = false;
       debugPrint('[TtsPlayer] Playback complete.');
@@ -69,10 +57,9 @@ class TtsPlayerService {
       debugPrint('[TtsPlayer] Playback error: $e');
       rethrow;
     } finally {
-      await sub?.cancel();
-      // Small delay before deleting so the OS releases the file handle
+      // Delete temp file AFTER we know playback is done (or on error)
       try {
-        await Future.delayed(const Duration(milliseconds: 300));
+        await Future.delayed(const Duration(milliseconds: 500));
         tempFile?.deleteSync();
       } catch (_) {}
     }

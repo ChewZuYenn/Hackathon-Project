@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../utils (Helper Function)/app_theme.dart';
 import '../utils (Helper Function)/exam_data.dart';
 import 'difficulty_selection_screen.dart';
 
@@ -16,120 +17,144 @@ class TopicSelectionScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Get real topics for this exam type and subject
     final topics = ExamDatabase.getTopics(examType, subject);
 
     return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        title: Text(
-          '$subject - Select Topic',
-          style: const TextStyle(
-            fontWeight: FontWeight.bold,
-            fontSize: 20,
-          ),
-        ),
-        centerTitle: true,
-        backgroundColor: Colors.white,
-        elevation: 0,
-        foregroundColor: Colors.black87,
-      ),
+      backgroundColor: AppTheme.background,
+      appBar: AppTheme.gradientAppBar(title: subject),
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(20.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Choose a topic in $subject',
-                style: const TextStyle(
-                  fontSize: 16,
-                  color: Colors.black54,
-                ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
+              child: Text(
+                'Select a topic to practise',
+                style: AppTheme.caption,
               ),
-              const SizedBox(height: 30),
-              Expanded(
-                child: topics.isEmpty
-                    ? const Center(
-                        child: Text(
-                          'No topics available for this subject yet.',
-                          style: TextStyle(
-                            fontSize: 16,
-                            color: Colors.black54,
+            ),
+            Expanded(
+              child: topics.isEmpty
+                  ? _buildEmpty()
+                  : ListView.builder(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      itemCount: topics.length,
+                      itemBuilder: (context, index) => Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: _TopicCard(
+                          topic: topics[index],
+                          index: index,
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => DifficultySelectionScreen(
+                                country: country,
+                                examType: examType,
+                                subject: subject,
+                                topic: topics[index],
+                              ),
+                            ),
                           ),
                         ),
-                      )
-                    : ListView.builder(
-                        itemCount: topics.length,
-                        itemBuilder: (context, index) {
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 16.0),
-                            child: _buildTopicCard(
-                              context,
-                              topics[index],
-                            ),
-                          );
-                        },
                       ),
-              ),
-            ],
-          ),
+                    ),
+            ),
+            const SizedBox(height: 12),
+          ],
         ),
       ),
     );
   }
 
-  Widget _buildTopicCard(BuildContext context, String topic) {
-    return InkWell(
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => DifficultySelectionScreen(
-              country: country,
-              examType: examType,
-              subject: subject,
-              topic: topic,
-            ),
+  Widget _buildEmpty() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Text('🔍', style: TextStyle(fontSize: 48)),
+          const SizedBox(height: 16),
+          const Text(
+            'No topics available yet',
+            style: AppTheme.sectionTitle,
           ),
-        );
-      },
-      borderRadius: BorderRadius.circular(16),
-      child: Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: const Color(0xFFF3E5F5),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: Colors.purple.shade200,
-            width: 2,
+          const SizedBox(height: 8),
+          Text(
+            'Check back soon!',
+            style: TextStyle(color: Colors.grey.shade500),
           ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.08),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                topic,
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.black87,
+        ],
+      ),
+    );
+  }
+}
+
+class _TopicCard extends StatelessWidget {
+  final String topic;
+  final int index;
+  final VoidCallback onTap;
+
+  const _TopicCard({
+    required this.topic,
+    required this.index,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: AppTheme.radiusMd,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+          decoration: BoxDecoration(
+            color: AppTheme.cardBg,
+            borderRadius: AppTheme.radiusMd,
+            boxShadow: AppTheme.softShadow,
+          ),
+          child: Row(
+            children: [
+              // Index bubble
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  gradient: AppTheme.primaryGradient,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Center(
+                  child: Text(
+                    '${index + 1}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                    ),
+                  ),
                 ),
               ),
-            ),
-            const Icon(
-              Icons.arrow_forward_ios,
-              color: Colors.black54,
-              size: 20,
-            ),
-          ],
+              const SizedBox(width: 14),
+              Expanded(
+                child: Text(
+                  topic,
+                  style: AppTheme.cardTitle,
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: AppTheme.primaryLight,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.arrow_forward_ios,
+                  size: 13,
+                  color: AppTheme.primary,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
