@@ -82,7 +82,7 @@ async function chatWithGemini(userText, history, examContext, questionText, work
     systemPrompt += `\n\nThe student's working space (their notes and calculations so far) shows:\n"${workingSpace.trim()}"`;
   }
 
-  systemPrompt += `\n\nBe helpful and encouraging. Keep your reply to 2-3 sentences maximum. Use plain conversational language. Never use markdown, bullet points, or special symbols — plain prose only, as your response will be spoken aloud.`;
+  systemPrompt += `\n\nBe helpful and encouraging. Keep your reply to 2-3 sentences maximum. Use plain conversational language. Never use markdown, bullet points, or special symbols — plain prose only, as your response will be spoken aloud. Always finish every sentence completely — never end mid-sentence.`;
 
   contents.push({ role: 'user', parts: [{ text: systemPrompt }] });
   contents.push({ role: 'model', parts: [{ text: "Got it! I'm ready to help this student." }] });
@@ -99,7 +99,7 @@ async function chatWithGemini(userText, history, examContext, questionText, work
     contents,
     generationConfig: {
       temperature: 0.7,
-      maxOutputTokens: 150,
+      maxOutputTokens: 400,
       topP: 0.95,
     },
     safetySettings: [

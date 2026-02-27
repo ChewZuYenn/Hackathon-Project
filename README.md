@@ -19,7 +19,7 @@ Access to quality, personalised academic support is unequal. Students preparing 
 
 | SDG | How the app contributes |
 |---|---|
-| **SDG 4 — Quality Education** | Delivers personalised, adaptive, AI-driven tutoring to any student with a smartphone, closing the gap between students who can and cannot afford private tutors. |
+| **. |
 | **SDG 10 — Reduced Inequalities** | Lowers barriers to academic success by making high-quality study tools free and accessible across income levels and geography. |
 | **SDG 9 — Industry, Innovation & Infrastructure** | Demonstrates responsible, practical AI integration in education using state-of-the-art LLMs and on-device speech recognition. |
 
